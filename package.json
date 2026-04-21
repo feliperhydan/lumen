@@ -1,0 +1,15 @@
+{
+  "name": "lumen-v8",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lumen - ambiente academico com leitor de PDF e persistencia em servidor local",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
+  }
+}

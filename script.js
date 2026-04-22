@@ -17,6 +17,8 @@ const DEF_CATS = [
   {id:'obs',  name:'Observação', color:'#6e6e6a', bg:'rgba(110,110,106,.18)'},
 ];
 
+const DEF_FOLDER_NAMES = ['Artigos', 'Livros', 'Materiais Estrangeiros'];
+
 /* ══════════════════════════════════════
    DATABASE — REST API (Node.js)
 ══════════════════════════════════════ */
@@ -113,17 +115,73 @@ const S = {
   view: 'library', activeTab: 'reader',
   cats: [], pending: null, openProjId: null,
   selectedHL: null, imgMode: false,
+  folders: {library: [], projects: []},
+  currentFolder: {library: 'root', projects: 'root'},
   libFilter: { tags: [], type: '', lang: '' },
 };
+
+function makeFolderId(scope) {
+  const prefix = scope === 'projects' ? 'proj' : 'lib';
+  return `${prefix}_fld_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function normalizeFolderList(raw, scope) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  return raw
+    .filter(f => f && typeof f === 'object')
+    .map(f => {
+      const id = String(f.id || '').trim();
+      const name = String(f.name || '').trim();
+      const parentId = f.parentId ? String(f.parentId).trim() : null;
+      if (!id || !name) return null;
+      if (seen.has(id)) return null;
+      seen.add(id);
+      return {id, name, parentId, scope, createdAt: Number(f.createdAt) || Date.now()};
+    })
+    .filter(Boolean);
+}
+
+function buildDefaultFolders(scope) {
+  const now = Date.now();
+  return DEF_FOLDER_NAMES.map((name, i) => ({
+    id: `${scope === 'projects' ? 'proj' : 'lib'}_default_${i + 1}`,
+    name,
+    parentId: null,
+    scope,
+    createdAt: now + i,
+  }));
+}
 
 async function loadCats() {
   try {
     const settings = await DB.settings.get();
     S.cats = Array.isArray(settings?.cats) && settings.cats.length ? settings.cats : DEF_CATS;
     document.body.classList.toggle('dark-mode', Boolean(settings?.darkMode));
+
+    S.folders.library = normalizeFolderList(settings?.libraryFolders, 'library');
+    S.folders.projects = normalizeFolderList(settings?.projectFolders, 'projects');
+
+    let shouldSaveFolders = false;
+    if (!S.folders.library.length) {
+      S.folders.library = buildDefaultFolders('library');
+      shouldSaveFolders = true;
+    }
+    if (!S.folders.projects.length) {
+      S.folders.projects = buildDefaultFolders('projects');
+      shouldSaveFolders = true;
+    }
+    if (shouldSaveFolders) {
+      await DB.settings.patch({
+        libraryFolders: S.folders.library,
+        projectFolders: S.folders.projects,
+      });
+    }
   } catch (err) {
     console.warn('Falha ao carregar configurações do servidor.', err);
     S.cats = DEF_CATS;
+    if (!S.folders.library.length) S.folders.library = buildDefaultFolders('library');
+    if (!S.folders.projects.length) S.folders.projects = buildDefaultFolders('projects');
   }
   if (!S.cats.length) S.cats = DEF_CATS;
 }
@@ -132,7 +190,266 @@ function saveCats() {
     console.warn('Falha ao salvar categorias no servidor.', err);
   });
 }
+
+function saveFolders() {
+  DB.settings.patch({
+    libraryFolders: S.folders.library,
+    projectFolders: S.folders.projects,
+  }).catch(err => {
+    console.warn('Falha ao salvar pastas no servidor.', err);
+  });
+}
+
 function getCat(id) { return S.cats.find(c=>c.id===id) || S.cats[0] || {id:'?',name:'?',color:'#888',bg:'rgba(136,136,136,.18)'}; }
+
+const Folders = {
+  _scopeKey(scope) {
+    return scope === 'projects' ? 'projects' : 'library';
+  },
+
+  _scopeLabel(scope) {
+    return scope === 'projects' ? 'Projetos' : 'Biblioteca';
+  },
+
+  list(scope) {
+    return S.folders[this._scopeKey(scope)] || [];
+  },
+
+  find(scope, id) {
+    if (!id || id === 'root') return null;
+    return this.list(scope).find(f => f.id === id) || null;
+  },
+
+  flatten(scope, parentId = null, depth = 0, out = []) {
+    const children = this.list(scope)
+      .filter(f => (f.parentId || null) === parentId)
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+
+    children.forEach(f => {
+      out.push({folder: f, depth});
+      this.flatten(scope, f.id, depth + 1, out);
+    });
+
+    return out;
+  },
+
+  optionTags(scope, selectedId = 'root', includeRoot = true) {
+    let html = '';
+    if (includeRoot) {
+      html += `<option value="root" ${selectedId === 'root' || !selectedId ? 'selected' : ''}>Sem pasta (raiz)</option>`;
+    }
+    this.flatten(scope).forEach(({folder, depth}) => {
+      const prefix = depth ? `${'— '.repeat(depth)}` : '';
+      html += `<option value="${folder.id}" ${selectedId === folder.id ? 'selected' : ''}>${escHtml(prefix + folder.name)}</option>`;
+    });
+    return html;
+  },
+
+  path(scope, id) {
+    const folder = this.find(scope, id);
+    if (!folder) return '';
+    const names = [folder.name];
+    let cur = folder;
+    let guard = 0;
+
+    while (cur?.parentId && guard < 80) {
+      const p = this.find(scope, cur.parentId);
+      if (!p) break;
+      names.unshift(p.name);
+      cur = p;
+      guard += 1;
+    }
+
+    return names.join(' / ');
+  },
+
+  descendants(scope, id) {
+    const out = [];
+    const stack = [id];
+    while (stack.length) {
+      const cur = stack.pop();
+      this.list(scope).forEach(f => {
+        if (f.parentId === cur) {
+          out.push(f.id);
+          stack.push(f.id);
+        }
+      });
+    }
+    return out;
+  },
+
+  isVisible(scope, itemFolderId) {
+    const key = this._scopeKey(scope);
+    const current = S.currentFolder[key] || 'root';
+
+    if (current === 'root') return true;
+    if (!itemFolderId) return false;
+    if (itemFolderId === current) return true;
+
+    let cur = this.find(scope, itemFolderId);
+    let guard = 0;
+    while (cur?.parentId && guard < 80) {
+      if (cur.parentId === current) return true;
+      cur = this.find(scope, cur.parentId);
+      guard += 1;
+    }
+    return false;
+  },
+
+  renderToolbar(scope) {
+    const key = this._scopeKey(scope);
+    const hostId = scope === 'projects' ? 'proj-folder-bar' : 'lib-folder-bar';
+    const host = document.getElementById(hostId);
+    if (!host) return;
+
+    const currentId = S.currentFolder[key] || 'root';
+    const currentPath = currentId === 'root' ? 'Raiz' : (this.path(scope, currentId) || 'Raiz');
+
+    host.innerHTML = `
+      <div class="folder-toolbar-row">
+        <span class="folder-toolbar-lbl">Pastas</span>
+        <select class="folder-sel" onchange="Folders.setCurrent('${scope}', this.value)">
+          ${this.optionTags(scope, currentId, true)}
+        </select>
+        <button class="btn btn-sm" onclick="Folders.create('${scope}')">+ Pasta</button>
+        <button class="btn btn-sm" onclick="Folders.manage('${scope}')">Gerenciar</button>
+        <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
+      </div>
+    `;
+  },
+
+  setCurrent(scope, id) {
+    const key = this._scopeKey(scope);
+    S.currentFolder[key] = id || 'root';
+    if (scope === 'projects') {
+      Proj.load();
+    } else {
+      Library.renderGrid();
+    }
+    this.renderToolbar(scope);
+  },
+
+  create(scope, preferredParentId = null) {
+    const key = this._scopeKey(scope);
+    const currentId = S.currentFolder[key] || 'root';
+    const selectedParent = preferredParentId || (currentId === 'root' ? 'root' : currentId);
+
+    Folders._pendingScope = scope;
+    Modal.show(`
+      <h3>Nova Pasta — ${this._scopeLabel(scope)}</h3>
+      <div class="fg"><label>Nome da pasta</label><input id="fld-name" placeholder="Ex: Revisões" autofocus></div>
+      <div class="fg"><label>Pasta pai</label><select id="fld-parent">${this.optionTags(scope, selectedParent, true)}</select></div>
+      <div class="mactions">
+        <button class="btn" onclick="Folders.manage('${scope}')">Voltar</button>
+        <button class="btn btn-p" onclick="Folders._confirmCreate()">Criar</button>
+      </div>
+    `);
+    setTimeout(() => document.getElementById('fld-name')?.focus(), 60);
+  },
+
+  _pendingScope: 'library',
+
+  _confirmCreate() {
+    const scope = this._pendingScope || 'library';
+    const name = (document.getElementById('fld-name')?.value || '').trim();
+    const parentVal = document.getElementById('fld-parent')?.value || 'root';
+    if (!name) return;
+
+    this.list(scope).push({
+      id: makeFolderId(scope),
+      name,
+      parentId: parentVal === 'root' ? null : parentVal,
+      createdAt: Date.now(),
+      scope,
+    });
+
+    saveFolders();
+    toast('Pasta criada.');
+    this.manage(scope);
+    this.renderToolbar(scope);
+    if (scope === 'projects') Proj.load(); else Library.renderGrid();
+  },
+
+  manage(scope) {
+    const rows = this.flatten(scope).map(({folder, depth}) => {
+      const parentPath = folder.parentId ? this.path(scope, folder.parentId) : 'Raiz';
+      return `
+        <div class="folder-man-row" style="padding-left:${10 + depth * 14}px;">
+          <div>
+            <div class="folder-man-name">📁 ${escHtml(folder.name)}</div>
+            <div class="folder-man-path">Pai: ${escHtml(parentPath)}</div>
+          </div>
+          <div class="folder-man-actions">
+            <button class="btn btn-sm" onclick="Folders.create('${scope}','${folder.id}')">+ Sub</button>
+            <button class="btn btn-sm" onclick="Folders.rename('${scope}','${folder.id}')">Renomear</button>
+            <button class="btn btn-d btn-sm" onclick="Folders.remove('${scope}','${folder.id}')">Excluir</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    Modal.show(`
+      <h3>Pastas — ${this._scopeLabel(scope)}</h3>
+      <div class="folder-man-list">
+        ${rows || '<div class="empty" style="padding:20px 10px;"><p>Nenhuma pasta criada.</p></div>'}
+      </div>
+      <div class="mactions">
+        <button class="btn" onclick="Modal.hide()">Fechar</button>
+        <button class="btn btn-p" onclick="Folders.create('${scope}','root')">+ Pasta na raiz</button>
+      </div>
+    `);
+  },
+
+  rename(scope, id) {
+    const f = this.find(scope, id);
+    if (!f) return;
+    const name = prompt('Novo nome da pasta:', f.name);
+    if (name === null) return;
+    const next = name.trim();
+    if (!next) return;
+    f.name = next;
+    saveFolders();
+    this.manage(scope);
+    this.renderToolbar(scope);
+    if (scope === 'projects') Proj.load(); else Library.renderGrid();
+    toast('Pasta renomeada.');
+  },
+
+  async remove(scope, id) {
+    const f = this.find(scope, id);
+    if (!f) return;
+    if (!confirm(`Excluir a pasta "${f.name}" e suas subpastas? Itens serão movidos para a raiz.`)) return;
+
+    const key = this._scopeKey(scope);
+    const removed = new Set([id, ...this.descendants(scope, id)]);
+    S.folders[key] = this.list(scope).filter(x => !removed.has(x.id));
+
+    if (scope === 'library') {
+      const touched = S.docs.filter(d => d.folderId && removed.has(d.folderId));
+      for (const d of touched) {
+        d.folderId = null;
+        await DB.pdfs.save(d);
+      }
+      if (removed.has(S.currentFolder.library)) S.currentFolder.library = 'root';
+      Library.renderGrid();
+      Library.renderSidebar();
+    } else {
+      const all = await DB.projects.all();
+      for (const p of all) {
+        if (p.folderId && removed.has(p.folderId)) {
+          p.folderId = null;
+          await DB.projects.save(p);
+        }
+      }
+      if (removed.has(S.currentFolder.projects)) S.currentFolder.projects = 'root';
+      Proj.load();
+    }
+
+    saveFolders();
+    this.renderToolbar(scope);
+    this.manage(scope);
+    toast('Pasta removida.');
+  },
+};
 
 /* ══════════════════════════════════════
    TOAST & MODAL
@@ -850,12 +1167,18 @@ const Suco = {
   async insertInProject(hlId) {
     const h = S.highlights.find(x => x.id === hlId);
     if (!h || !S.currentDoc) return;
-    // Build a temporary attachment object from the highlight
     const doc = S.currentDoc;
-    const ref = { title: doc.title||doc.name, author: doc.author||'', year: doc.year||'', doi: doc.doi||'' };
-    const fakeAtt = { id: h.id, pdfId: h.pdfId, page: h.page, text: h.text, type: h.type,
-                      imageData: h.imageData||null, catId: h.catId, note: h.note, reference: ref };
-    await Attachments.insertInProject(fakeAtt.id, fakeAtt);
+    const ref = {
+      title: doc.title || doc.name,
+      author: doc.author || '',
+      year: doc.year || '',
+      doi: doc.doi || '',
+    };
+    await Attachments.insertInProject(h.id, {
+      sourceType: 'highlight',
+      highlight: {...h},
+      reference: ref,
+    });
   },
 
   onHLFreeNote(hlId, val) {
@@ -891,6 +1214,7 @@ const Suco = {
 const Library = {
   async load() {
     S.docs = await DB.pdfs.all();
+    Folders.renderToolbar('library');
     this.renderFilters();
     this.renderGrid();
     this.renderSidebar();
@@ -932,6 +1256,7 @@ const Library = {
 
   filteredDocs() {
     let docs = S.docs;
+    docs = docs.filter(d => Folders.isVisible('library', d.folderId || null));
     if (S.libFilter.tags.length)
       docs = docs.filter(d => S.libFilter.tags.every(t => (d.tags || []).includes(t)));
     if (S.libFilter.type)
@@ -959,7 +1284,9 @@ const Library = {
   },
 
   renderSidebar() {
-    document.getElementById('doc-list').innerHTML = S.docs
+    const listEl = document.getElementById('doc-list');
+    if (!listEl) return;
+    listEl.innerHTML = S.docs
       .sort((a, b) => b.addedAt - a.addedAt)
       .map(d => `<div class="sitem" id="sdoc-${d.id}" onclick="Library.openById('${d.id}')">
         <span class="ico" style="font-size:10px;">▪</span>
@@ -1017,6 +1344,9 @@ const Library = {
         </div>
         <div class="fg" style="max-width:80px;"><label>Idioma</label><input id="em-lang" value="${escHtml(d.lang||'')}"></div>
       </div>
+      <div class="fg"><label>Pasta</label>
+        <select id="em-folder">${Folders.optionTags('library', d.folderId || 'root', true)}</select>
+      </div>
       <div class="fg"><label>DOI</label><input id="em-doi" placeholder="10.xxxx/xxxx" value="${escHtml(d.doi||'')}"></div>
       <div class="fg">
         <label>Tags <small style="font-weight:400;color:var(--text3)">(Enter para adicionar)</small></label>
@@ -1067,6 +1397,8 @@ const Library = {
     d.year   = document.getElementById('em-year').value.trim();
     d.type   = document.getElementById('em-type').value;
     d.lang   = document.getElementById('em-lang').value.trim();
+    d.folderId = (document.getElementById('em-folder').value || 'root');
+    if (d.folderId === 'root') d.folderId = null;
     d.doi    = document.getElementById('em-doi').value.trim();
     d.tags   = [...this._modalTags];
     await DB.pdfs.save(d);
@@ -1094,7 +1426,8 @@ const Proj = {
   _saveTimer: null,
 
   async load() {
-    const projs = await DB.projects.all();
+    const projs = (await DB.projects.all()).filter(p => Folders.isVisible('projects', p.folderId || null));
+    Folders.renderToolbar('projects');
     const list  = document.getElementById('proj-list');
     const empty = document.getElementById('proj-empty');
     if (!projs.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
@@ -1105,7 +1438,9 @@ const Proj = {
         <div style="flex:1;">
           <div style="font-size:14px;font-weight:500;">${escHtml(p.title)}</div>
           <div style="font-size:11px;color:var(--text3);">${new Date(p.updatedAt).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}</div>
+          <div style="font-size:11px;color:var(--text3);">${escHtml(Folders.path('projects', p.folderId) || 'Sem pasta (raiz)')}</div>
         </div>
+        <button class="btn btn-sm" onclick="event.stopPropagation();Proj.move('${p.id}')">📁</button>
         <button class="btn btn-d btn-sm" onclick="event.stopPropagation();Proj.del('${p.id}')">✕</button>
       </div>`
     ).join('');
@@ -1115,6 +1450,7 @@ const Proj = {
     Modal.show(`
       <h3>Novo Projeto</h3>
       <div class="fg"><label>Título</label><input id="np-t" type="text" autofocus placeholder="Ex: Revisão de Literatura — Capítulo 2"></div>
+      <div class="fg"><label>Pasta</label><select id="np-folder">${Folders.optionTags('projects', S.currentFolder.projects || 'root', true)}</select></div>
       <div class="mactions">
         <button class="btn" onclick="Modal.hide()">Cancelar</button>
         <button class="btn btn-p" onclick="Proj.create()">Criar</button>
@@ -1126,12 +1462,42 @@ const Proj = {
   async create() {
     const title = document.getElementById('np-t')?.value?.trim();
     if (!title) return;
+    let folderId = document.getElementById('np-folder')?.value || 'root';
+    if (folderId === 'root') folderId = null;
     const p = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-      title, content: '', createdAt: Date.now(), updatedAt: Date.now()
+      title, content: '', folderId, createdAt: Date.now(), updatedAt: Date.now()
     };
     await DB.projects.save(p);
     Modal.hide(); this.open(p.id);
+  },
+
+  async move(id) {
+    const p = await DB.projects.get(id);
+    if (!p) return;
+
+    Modal.show(`
+      <h3>Mover Projeto</h3>
+      <div class="fg"><label>Projeto</label><input value="${escHtml(p.title)}" disabled></div>
+      <div class="fg"><label>Pasta</label><select id="pm-folder">${Folders.optionTags('projects', p.folderId || 'root', true)}</select></div>
+      <div class="mactions">
+        <button class="btn" onclick="Modal.hide()">Cancelar</button>
+        <button class="btn btn-p" onclick="Proj._saveMove('${p.id}')">Salvar</button>
+      </div>
+    `);
+  },
+
+  async _saveMove(id) {
+    const p = await DB.projects.get(id);
+    if (!p) return;
+    let folderId = document.getElementById('pm-folder')?.value || 'root';
+    if (folderId === 'root') folderId = null;
+    p.folderId = folderId;
+    p.updatedAt = Date.now();
+    await DB.projects.save(p);
+    Modal.hide();
+    this.load();
+    toast('Projeto movido.');
   },
 
   async open(id) {
@@ -1211,14 +1577,18 @@ const Proj = {
 
   buildAttCard(a, c, ref) {
     const isImg = a.type === 'image';
+    const note = (a.note || '').trim();
+    const sucoNote = (a.sucoNote || '').trim();
     return `<div class="proj-att-card" contenteditable="false"
       data-pdf-id="${escHtml(a.pdfId)}"
       data-page="${a.page}"
       style="border-left-color:${c.color};">
       ${isImg
         ? `<img class="proj-att-card-img" src="${escHtml(a.imageData||'')}" alt="Imagem p.${a.page}">`
-        : `<div class="proj-att-card-text">"${escHtml((a.text||'').substring(0,280))}${(a.text||'').length>280?'…':''}"</div>`
+        : `<div class="proj-att-card-text">"${escHtml(a.text||'')}"</div>`
       }
+      ${note ? `<div class="proj-att-card-note">📝 ${escHtml(note)}</div>` : ''}
+      ${sucoNote ? `<div class="proj-att-card-note">✍ ${escHtml(sucoNote)}</div>` : ''}
       <div class="proj-att-card-meta">
         <span class="cat-badge" style="background:${c.bg};color:${c.color};">${escHtml(c.name)}</span>
         ${ref ? `<span>${escHtml(ref)}</span>` : ''}
@@ -1358,26 +1728,32 @@ const Attachments = {
       return;
     }
 
-    let a = prebuiltAtt;
-    if (!a) {
+    let item = prebuiltAtt;
+    if (!item) {
       const atts = await DB.attachments.all();
-      a = atts.find(x => x.id === attId);
+      const att = atts.find(x => x.id === attId);
+      if (att) item = {sourceType: 'attachment', attachment: att};
+    } else if (!item.sourceType) {
+      item = {sourceType: 'attachment', attachment: item};
     }
-    if (!a) return;
+    if (!item) return;
+
+    const previewSrc = item.sourceType === 'highlight' ? item.highlight : item.attachment;
+    const previewText = previewSrc?.text || '';
 
     if (projs.length === 1) {
-      await this._doInsert(a, projs[0]);
+      await this._doInsert(item, projs[0]);
       return;
     }
 
     const sortedProjs = projs.sort((x, y) => y.updatedAt - x.updatedAt);
-    Attachments._pendingInsertAtt = a;
+    Attachments._pendingInsertItem = item;
     Attachments._allProjs = sortedProjs;
 
     Modal.show(`
       <h3>Inserir em Projeto</h3>
       <div style="margin-bottom:12px;font-size:13px;color:var(--text2);font-style:italic;">
-        "${escHtml((a.text || '').substring(0, 80))}${(a.text||'').length > 80 ? '…' : ''}"
+        "${escHtml(previewText.substring(0, 100))}${previewText.length > 100 ? '…' : ''}"
       </div>
       <div class="fg">
         <input id="ins-proj-search" type="text" placeholder="Buscar projeto…"
@@ -1390,6 +1766,7 @@ const Attachments = {
               <div>
                 <div style="font-size:13px;font-weight:500;">${escHtml(p.title)}</div>
                 <div style="font-size:11px;color:var(--text3);">${new Date(p.updatedAt).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}</div>
+                <div style="font-size:11px;color:var(--text3);">${escHtml(Folders.path('projects', p.folderId) || 'Sem pasta (raiz)')}</div>
               </div>
             </div>`).join('')}
         </div>
@@ -1401,7 +1778,7 @@ const Attachments = {
     setTimeout(() => document.getElementById('ins-proj-search')?.focus(), 80);
   },
 
-  _pendingInsertAtt: null,
+  _pendingInsertItem: null,
   _allProjs: [],
 
   _filterProjList(q) {
@@ -1413,9 +1790,9 @@ const Attachments = {
 
   async _pickProj(projId) {
     const proj = this._allProjs.find(p => p.id === projId);
-    if (!proj || !this._pendingInsertAtt) { Modal.hide(); return; }
+    if (!proj || !this._pendingInsertItem) { Modal.hide(); return; }
     Modal.hide();
-    await this._doInsert(this._pendingInsertAtt, proj);
+    await this._doInsert(this._pendingInsertItem, proj);
   },
 
   async _insertPicked(attId) {
@@ -1423,12 +1800,63 @@ const Attachments = {
     if (!selEl) return;
     const projId = selEl.value;
     const proj = await DB.projects.get(projId);
-    if (!proj || !this._pendingInsertAtt) { Modal.hide(); return; }
-    await this._doInsert(this._pendingInsertAtt, proj);
+    if (!proj || !this._pendingInsertItem) { Modal.hide(); return; }
+    await this._doInsert(this._pendingInsertItem, proj);
     Modal.hide();
   },
 
-  async _doInsert(a, proj) {
+  async _resolveInsertPayload(item) {
+    if (!item) return null;
+
+    if (item.sourceType === 'highlight') {
+      const h = item.highlight || {};
+      return {
+        ...h,
+        reference: item.reference || h.reference || {},
+      };
+    }
+
+    const a = item.attachment || item;
+    if (!a) return null;
+
+    let h = null;
+    if (a.highlightId) {
+      const allHL = await DB.highlights.all();
+      h = allHL.find(x => x.id === a.highlightId) || null;
+    }
+
+    if (h) {
+      return {
+        ...h,
+        type: h.type || a.type,
+        imageData: h.imageData || a.imageData || null,
+        note: h.note || a.note || '',
+        sucoNote: h.sucoNote || '',
+        catId: h.catId || a.catId,
+        pdfId: h.pdfId || a.pdfId,
+        page: h.page || a.page,
+        reference: a.reference || h.reference || {},
+      };
+    }
+
+    return {
+      id: a.highlightId || a.id,
+      pdfId: a.pdfId,
+      page: a.page,
+      text: a.text || '',
+      type: a.type || 'text',
+      imageData: a.imageData || null,
+      catId: a.catId || (S.cats[0]?.id || 'obs'),
+      note: a.note || '',
+      sucoNote: a.sucoNote || '',
+      reference: a.reference || {},
+    };
+  },
+
+  async _doInsert(item, proj) {
+    const a = await this._resolveInsertPayload(item);
+    if (!a) return;
+
     const c    = getCat(a.catId);
     const ref  = [a.reference?.author, a.reference?.year].filter(Boolean).join(', ')
                + (a.reference?.doi ? ` | DOI: ${a.reference.doi}` : '');
@@ -1470,7 +1898,7 @@ const Attachments = {
       editor.scrollTop = editor.scrollHeight;
       Proj._reattachCards(editor);
       Proj.scheduleSave();
-      toast(`Anexo inserido em "${proj.title}"`);
+      toast(`Highlight inserido em "${proj.title}"`);
     }, 150);
   },
 
@@ -1633,10 +2061,14 @@ const UI = {
     for (const file of files) {
       try {
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        const currentFolderId = (S.currentFolder.library && S.currentFolder.library !== 'root')
+          ? S.currentFolder.library
+          : null;
         const docPayload = {
           id, name: file.name.replace(/\.pdf$/i, ''),
           title: file.name.replace(/\.pdf$/i, ''),
           author: '', year: '', type: 'artigo', lang: 'pt', doi: '', tags: [],
+          folderId: currentFolderId,
           addedAt: Date.now(), size: file.size,
         };
         const savedDoc = await DB.pdfs.upload(file, docPayload);

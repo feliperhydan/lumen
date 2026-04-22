@@ -20,6 +20,8 @@ const DEFAULT_DB = {
   settings: {
     cats: null,
     darkMode: false,
+    libraryFolders: [],
+    projectFolders: [],
   },
 };
 
@@ -76,6 +78,8 @@ function normalizeDb(raw) {
       next.settings = {
         cats: Array.isArray(raw.settings.cats) ? raw.settings.cats : null,
         darkMode: Boolean(raw.settings.darkMode),
+        libraryFolders: Array.isArray(raw.settings.libraryFolders) ? raw.settings.libraryFolders : [],
+        projectFolders: Array.isArray(raw.settings.projectFolders) ? raw.settings.projectFolders : [],
       };
     }
   }
@@ -163,6 +167,14 @@ app.patch('/api/settings', async (req, res, next) => {
 
     if (Object.prototype.hasOwnProperty.call(patch, 'darkMode')) {
       db.settings.darkMode = Boolean(patch.darkMode);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'libraryFolders')) {
+      db.settings.libraryFolders = Array.isArray(patch.libraryFolders) ? patch.libraryFolders : [];
+    }
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'projectFolders')) {
+      db.settings.projectFolders = Array.isArray(patch.projectFolders) ? patch.projectFolders : [];
     }
 
     await saveDb();

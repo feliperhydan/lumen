@@ -24,10 +24,6 @@
     <div class="sitem"        id="snav-attachments" onclick="UI.nav('attachments')"><span class="ico">📎</span><span class="lbl">Anexos</span></div>
     <div class="sitem"        id="snav-search"      onclick="UI.nav('search')"><span class="ico">⌕</span><span class="lbl">Busca Global</span></div>
   </div>
-  <div class="sidebar-sect" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
-    <div class="sidebar-lbl">Documentos</div>
-    <div id="doc-list"></div>
-  </div>
   <div class="settings-btn" onclick="UI.showSettings()"><span>⚙</span><span>Configurações</span></div>
 </aside>
 
@@ -48,6 +44,7 @@
       <div class="lib-top">
         <h1 class="view-title">Biblioteca</h1>
       </div>
+      <div class="folder-toolbar" id="lib-folder-bar"></div>
       <div class="lib-filters" id="lib-filters"></div>
       <div class="lib-grid-wrap">
         <div id="doc-grid" class="doc-grid"></div>
@@ -99,6 +96,7 @@
         <h1 class="view-title">Projetos</h1>
         <button class="btn btn-p" onclick="Proj.newProj()">+ Novo Projeto</button>
       </div>
+      <div class="folder-toolbar" id="proj-folder-bar" style="padding:0 0 12px 0;border-bottom:none;"></div>
       <div id="proj-list"></div>
       <div id="proj-empty" class="empty" style="display:none;"><h3>Nenhum projeto ainda</h3><p>Crie projetos para organizar suas sínteses.</p></div>
     </div>

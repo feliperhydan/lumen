@@ -57,6 +57,7 @@ function normalizeDoc(input = {}, fallbackName = 'Documento') {
     type: normalizeString(input.type, 'artigo').trim() || 'artigo',
     lang: normalizeString(input.lang, 'pt').trim() || 'pt',
     doi: normalizeString(input.doi).trim(),
+    folderId: normalizeString(input.folderId).trim() || null,
     tags,
     size: Number(input.size) || 0,
     addedAt: Number(input.addedAt) || Date.now(),

@@ -110,6 +110,7 @@ const DB = (() => {
 ══════════════════════════════════════ */
 const S = {
   docs: [], currentDoc: null, pdfDoc: null,
+  projectItems: [],
   highlights: [], sucoNotes: {},
   currentPage: 1, totalPages: 0, scale: 1.5,
   view: 'library', activeTab: 'reader',
@@ -137,7 +138,14 @@ function normalizeFolderList(raw, scope) {
       if (!id || !name) return null;
       if (seen.has(id)) return null;
       seen.add(id);
-      return {id, name, parentId, scope, createdAt: Number(f.createdAt) || Date.now()};
+      return {
+        id,
+        name,
+        parentId,
+        scope,
+        createdAt: Number(f.createdAt) || Date.now(),
+        mirrorOf: typeof f.mirrorOf === 'string' && f.mirrorOf.trim() ? f.mirrorOf.trim() : null,
+      };
     })
     .filter(Boolean);
 }
@@ -171,6 +179,9 @@ async function loadCats() {
       S.folders.projects = buildDefaultFolders('projects');
       shouldSaveFolders = true;
     }
+    if (syncProjectFoldersFromLibrary()) {
+      shouldSaveFolders = true;
+    }
     if (shouldSaveFolders) {
       await DB.settings.patch({
         libraryFolders: S.folders.library,
@@ -192,17 +203,120 @@ function saveCats() {
 }
 
 function saveFolders() {
-  DB.settings.patch({
+  return DB.settings.patch({
     libraryFolders: S.folders.library,
     projectFolders: S.folders.projects,
-  }).catch(err => {
+  }).then(() => true).catch(err => {
     console.warn('Falha ao salvar pastas no servidor.', err);
+    return false;
   });
+}
+
+function syncProjectFoldersFromLibrary() {
+  const source = Array.isArray(S.folders.library) ? S.folders.library : [];
+  const target = Array.isArray(S.folders.projects) ? S.folders.projects : [];
+  if (!source.length || !target.length) return false;
+
+  const sourceById = new Map(source.map(folder => [folder.id, folder]));
+  const sourceChildren = new Map();
+  source.forEach(folder => {
+    const key = folder.parentId || 'root';
+    if (!sourceChildren.has(key)) sourceChildren.set(key, []);
+    sourceChildren.get(key).push(folder);
+  });
+  sourceChildren.forEach(children => {
+    children.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  });
+
+  const targetByMirror = new Map();
+  const targetByParentName = new Map();
+  const processing = new Set();
+  target.forEach(folder => {
+    if (folder.mirrorOf) targetByMirror.set(folder.mirrorOf, folder);
+    const key = `${folder.parentId || 'root'}::${folder.name}`;
+    targetByParentName.set(key, folder);
+  });
+
+  let changed = false;
+
+  const ensureMirror = (sourceFolder) => {
+    if (!sourceFolder) return null;
+    if (targetByMirror.has(sourceFolder.id)) return targetByMirror.get(sourceFolder.id);
+    if (processing.has(sourceFolder.id)) return targetByMirror.get(sourceFolder.id) || null;
+
+    processing.add(sourceFolder.id);
+
+    const parentMirror = sourceFolder.parentId ? ensureMirror(sourceById.get(sourceFolder.parentId)) : null;
+    const parentId = parentMirror ? parentMirror.id : null;
+    const targetKey = `${parentId || 'root'}::${sourceFolder.name}`;
+
+    let mirrored = targetByMirror.get(sourceFolder.id) || targetByParentName.get(targetKey) || null;
+    if (mirrored) {
+      if (mirrored.mirrorOf !== sourceFolder.id) {
+        mirrored.mirrorOf = sourceFolder.id;
+        changed = true;
+      }
+      if ((mirrored.parentId || null) !== parentId) {
+        mirrored.parentId = parentId;
+        changed = true;
+      }
+      if (mirrored.name !== sourceFolder.name) {
+        mirrored.name = sourceFolder.name;
+        changed = true;
+      }
+      if (mirrored.scope !== 'projects') {
+        mirrored.scope = 'projects';
+        changed = true;
+      }
+      if (!mirrored.createdAt) {
+        mirrored.createdAt = Number(sourceFolder.createdAt) || Date.now();
+        changed = true;
+      }
+    } else {
+      mirrored = {
+        id: makeFolderId('projects'),
+        name: sourceFolder.name,
+        parentId,
+        scope: 'projects',
+        createdAt: Number(sourceFolder.createdAt) || Date.now(),
+        mirrorOf: sourceFolder.id,
+      };
+      target.push(mirrored);
+      changed = true;
+    }
+
+    targetByMirror.set(sourceFolder.id, mirrored);
+    targetByParentName.set(targetKey, mirrored);
+
+    (sourceChildren.get(sourceFolder.id) || []).forEach(ensureMirror);
+    processing.delete(sourceFolder.id);
+    return mirrored;
+  };
+
+  (sourceChildren.get('root') || []).forEach(ensureMirror);
+
+  const sourceIds = new Set(source.map(folder => folder.id));
+  const nextTarget = [];
+  for (const folder of target) {
+    if (folder.mirrorOf && !sourceIds.has(folder.mirrorOf) && !String(folder.id || '').startsWith('proj_default_')) {
+      changed = true;
+      continue;
+    }
+    nextTarget.push(folder);
+  }
+  if (nextTarget.length !== target.length) {
+    S.folders.projects = nextTarget;
+    changed = true;
+  }
+
+  return changed;
 }
 
 function getCat(id) { return S.cats.find(c=>c.id===id) || S.cats[0] || {id:'?',name:'?',color:'#888',bg:'rgba(136,136,136,.18)'}; }
 
 const Folders = {
+  _drag: null,
+
   _scopeKey(scope) {
     return scope === 'projects' ? 'projects' : 'library';
   },
@@ -278,6 +392,186 @@ const Folders = {
     return out;
   },
 
+  _readDragPayload(ev) {
+    const raw = ev?.dataTransfer?.getData('application/json') || ev?.dataTransfer?.getData('text/plain');
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.scope && parsed?.kind && parsed?.id) return parsed;
+      } catch (_err) {}
+    }
+    return this._drag;
+  },
+
+  _clearDragState() {
+    this._drag = null;
+    document.querySelectorAll('.dragging, .drop-target').forEach(el => {
+      el.classList.remove('dragging');
+      el.classList.remove('drop-target');
+    });
+  },
+
+  dragStart(ev, scope, kind, id) {
+    if (!ev?.dataTransfer) return;
+    ev.stopPropagation();
+    this._drag = {scope, kind, id};
+    ev.dataTransfer.effectAllowed = 'move';
+    ev.dataTransfer.setData('application/json', JSON.stringify(this._drag));
+    ev.dataTransfer.setData('text/plain', `${kind}:${id}`);
+    ev.currentTarget?.classList.add('dragging');
+  },
+
+  dragEnd() {
+    this._clearDragState();
+  },
+
+  dragOver(ev, scope, targetKind, targetId) {
+    const payload = this._readDragPayload(ev);
+    if (!payload || payload.scope !== scope || !this._canDrop(payload, scope, targetKind, targetId)) return;
+    ev.preventDefault();
+    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+    ev.currentTarget?.classList.add('drop-target');
+  },
+
+  dragLeave(ev) {
+    ev.currentTarget?.classList.remove('drop-target');
+  },
+
+  async drop(ev, scope, targetKind, targetId) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const payload = this._readDragPayload(ev);
+    this._clearDragState();
+    if (!payload || payload.scope !== scope) return;
+    await this._applyDrop(payload, scope, targetKind, targetId);
+  },
+
+  _canDrop(payload, scope, targetKind, targetId) {
+    if (payload.scope !== scope) return false;
+    if (payload.kind === 'folder') {
+      if (targetKind !== 'folder' && targetKind !== 'root') return false;
+      if (targetKind === 'folder') {
+        if (payload.id === targetId) return false;
+        if (this.descendants(scope, payload.id).includes(targetId)) return false;
+      }
+    }
+    return true;
+  },
+
+  async _applyDrop(payload, scope, targetKind, targetId) {
+    const folderId = targetKind === 'root' ? null : targetId;
+    if (payload.kind === 'folder') return this._moveFolder(scope, payload.id, folderId);
+    if (payload.kind === 'item') return this._moveItem(scope, payload.id, folderId);
+    return false;
+  },
+
+  async _moveItem(scope, id, folderId) {
+    if (scope === 'library') {
+      const doc = S.docs.find(d => d.id === id);
+      if (!doc) return false;
+      const nextFolderId = folderId || null;
+      const prevFolderId = doc.folderId || null;
+      if (prevFolderId === nextFolderId) {
+        toast('O documento já está nessa pasta.');
+        return false;
+      }
+      doc.folderId = nextFolderId;
+      try {
+        await DB.pdfs.save(doc);
+        await Library.load();
+        toast('Documento movido.');
+        return true;
+      } catch (err) {
+        doc.folderId = prevFolderId;
+        console.warn(err);
+        toast('Não foi possível mover o documento.');
+        return false;
+      }
+    }
+
+    const proj = S.projectItems.find(p => p.id === id);
+    if (!proj) return false;
+    const nextFolderId = folderId || null;
+    const prevFolderId = proj.folderId || null;
+    if (prevFolderId === nextFolderId) {
+      toast('O projeto já está nessa pasta.');
+      return false;
+    }
+    proj.folderId = nextFolderId;
+    try {
+      await DB.projects.save(proj);
+      await Proj.load();
+      toast('Projeto movido.');
+      return true;
+    } catch (err) {
+      proj.folderId = prevFolderId;
+      console.warn(err);
+      toast('Não foi possível mover o projeto.');
+      return false;
+    }
+  },
+
+  async _moveFolder(scope, id, parentId) {
+    const folder = this.find(scope, id);
+    if (!folder) return false;
+    const nextParentId = parentId || null;
+    const prevParentId = folder.parentId || null;
+    if (prevParentId === nextParentId) {
+      toast('A pasta já está nesse local.');
+      return false;
+    }
+    if (nextParentId && (nextParentId === id || this.descendants(scope, id).includes(nextParentId))) {
+      toast('Não é possível mover uma pasta para dentro dela mesma.');
+      return false;
+    }
+
+    folder.parentId = nextParentId;
+    if (scope === 'library') syncProjectFoldersFromLibrary();
+    const saved = await saveFolders();
+    if (!saved) {
+      folder.parentId = prevParentId;
+      toast('Não foi possível salvar a mudança da pasta.');
+      return false;
+    }
+
+    if (scope === 'projects') await Proj.load();
+    else await Library.load();
+    toast('Pasta movida.');
+    return true;
+  },
+
+  items(scope) {
+    if (scope === 'projects') {
+      return (S.projectItems || []).map(p => ({
+        id: p.id,
+        name: p.title || 'Projeto sem título',
+        folderId: p.folderId || null,
+        icon: '📝',
+        type: 'project',
+      }));
+    }
+
+    return (S.docs || []).map(d => ({
+      id: d.id,
+      name: d.title || d.name || 'Documento',
+      folderId: d.folderId || null,
+      icon: '📄',
+      type: 'doc',
+    }));
+  },
+
+  _itemsInFolder(scope, folderId) {
+    return this.items(scope)
+      .filter(i => (i.folderId || null) === (folderId || null))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  },
+
+  _folderChildren(scope, parentId) {
+    return this.list(scope)
+      .filter(f => (f.parentId || null) === (parentId || null))
+      .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  },
+
   isVisible(scope, itemFolderId) {
     const key = this._scopeKey(scope);
     const current = S.currentFolder[key] || 'root';
@@ -296,6 +590,35 @@ const Folders = {
     return false;
   },
 
+  _renderTreeBranch(scope, parentId = null, depth = 1) {
+    const selectedId = S.currentFolder[this._scopeKey(scope)] || 'root';
+    let html = '';
+
+    const folders = this._folderChildren(scope, parentId);
+    folders.forEach(folder => {
+      const isActive = selectedId === folder.id;
+      html += `
+        <div class="folder-tree-row ${isActive ? 'active' : ''}" style="--depth:${depth}" draggable="true" onclick="Folders.setCurrent('${scope}','${folder.id}')" ondragstart="Folders.dragStart(event,'${scope}','folder','${folder.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','folder','${folder.id}')" title="${escHtml(this.path(scope, folder.id) || folder.name)}">
+          <span class="folder-tree-ico">${isActive ? '📂' : '📁'}</span>
+          <span class="folder-tree-name">${escHtml(folder.name)}</span>
+        </div>
+      `;
+
+      this._itemsInFolder(scope, folder.id).forEach(item => {
+        html += `
+          <div class="folder-tree-item" style="--depth:${depth + 1}" draggable="true" onclick="Folders.openItem('${scope}','${item.id}')" ondragstart="Folders.dragStart(event,'${scope}','item','${item.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','folder','${folder.id}')" title="${escHtml(item.name)}">
+            <span class="folder-tree-ico">${item.icon}</span>
+            <span class="folder-tree-name">${escHtml(item.name)}</span>
+          </div>
+        `;
+      });
+
+      html += this._renderTreeBranch(scope, folder.id, depth + 1);
+    });
+
+    return html;
+  },
+
   renderToolbar(scope) {
     const key = this._scopeKey(scope);
     const hostId = scope === 'projects' ? 'proj-folder-bar' : 'lib-folder-bar';
@@ -305,17 +628,47 @@ const Folders = {
     const currentId = S.currentFolder[key] || 'root';
     const currentPath = currentId === 'root' ? 'Raiz' : (this.path(scope, currentId) || 'Raiz');
 
+    const rootItems = this._itemsInFolder(scope, null)
+      .map(item => `
+        <div class="folder-tree-item" style="--depth:1" draggable="true" onclick="Folders.openItem('${scope}','${item.id}')" ondragstart="Folders.dragStart(event,'${scope}','item','${item.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')" title="${escHtml(item.name)}">
+          <span class="folder-tree-ico">${item.icon}</span>
+          <span class="folder-tree-name">${escHtml(item.name)}</span>
+        </div>
+      `)
+      .join('');
+
+    const selectedName = currentId === 'root'
+      ? 'Raiz'
+      : (this.find(scope, currentId)?.name || 'Raiz');
+
     host.innerHTML = `
       <div class="folder-toolbar-row">
-        <span class="folder-toolbar-lbl">Pastas</span>
-        <select class="folder-sel" onchange="Folders.setCurrent('${scope}', this.value)">
-          ${this.optionTags(scope, currentId, true)}
-        </select>
+        <span class="folder-toolbar-lbl">Explorador</span>
         <button class="btn btn-sm" onclick="Folders.create('${scope}')">+ Pasta</button>
-        <button class="btn btn-sm" onclick="Folders.manage('${scope}')">Gerenciar</button>
+        <button class="btn btn-sm" onclick="Folders.createSub('${scope}')">+ Subpasta</button>
+        <button class="btn btn-sm" onclick="Folders.renameSelected('${scope}')">Renomear</button>
+        <button class="btn btn-d btn-sm" onclick="Folders.removeSelected('${scope}')">Excluir</button>
         <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
       </div>
+      <div class="folder-tree" data-scope="${scope}" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
+        <div class="folder-tree-row ${currentId === 'root' ? 'active' : ''}" style="--depth:0" onclick="Folders.setCurrent('${scope}','root')" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
+          <span class="folder-tree-ico">🗂</span>
+          <span class="folder-tree-name">Raiz (${escHtml(this._scopeLabel(scope))})</span>
+        </div>
+        ${rootItems}
+        ${this._renderTreeBranch(scope, null, 1)}
+      </div>
+      <div class="folder-tree-foot">Selecionado: ${escHtml(selectedName)}</div>
     `;
+  },
+
+  openItem(scope, id) {
+    if (!id) return;
+    if (scope === 'projects') {
+      Proj.open(id);
+    } else {
+      Library.openById(id);
+    }
   },
 
   setCurrent(scope, id) {
@@ -327,6 +680,36 @@ const Folders = {
       Library.renderGrid();
     }
     this.renderToolbar(scope);
+  },
+
+  createSub(scope) {
+    const key = this._scopeKey(scope);
+    const cur = S.currentFolder[key] || 'root';
+    if (cur === 'root') {
+      toast('Selecione uma pasta para criar subpasta.');
+      return;
+    }
+    this.create(scope, cur);
+  },
+
+  renameSelected(scope) {
+    const key = this._scopeKey(scope);
+    const cur = S.currentFolder[key] || 'root';
+    if (cur === 'root') {
+      toast('Selecione uma pasta para renomear.');
+      return;
+    }
+    this.rename(scope, cur);
+  },
+
+  removeSelected(scope) {
+    const key = this._scopeKey(scope);
+    const cur = S.currentFolder[key] || 'root';
+    if (cur === 'root') {
+      toast('Selecione uma pasta para excluir.');
+      return;
+    }
+    this.remove(scope, cur);
   },
 
   create(scope, preferredParentId = null) {
@@ -349,7 +732,7 @@ const Folders = {
 
   _pendingScope: 'library',
 
-  _confirmCreate() {
+  async _confirmCreate() {
     const scope = this._pendingScope || 'library';
     const name = (document.getElementById('fld-name')?.value || '').trim();
     const parentVal = document.getElementById('fld-parent')?.value || 'root';
@@ -363,9 +746,10 @@ const Folders = {
       scope,
     });
 
-    saveFolders();
+    if (scope === 'library') syncProjectFoldersFromLibrary();
+    await saveFolders();
     toast('Pasta criada.');
-    this.manage(scope);
+    Modal.hide();
     this.renderToolbar(scope);
     if (scope === 'projects') Proj.load(); else Library.renderGrid();
   },
@@ -399,7 +783,7 @@ const Folders = {
     `);
   },
 
-  rename(scope, id) {
+  async rename(scope, id) {
     const f = this.find(scope, id);
     if (!f) return;
     const name = prompt('Novo nome da pasta:', f.name);
@@ -407,8 +791,8 @@ const Folders = {
     const next = name.trim();
     if (!next) return;
     f.name = next;
-    saveFolders();
-    this.manage(scope);
+    if (scope === 'library') syncProjectFoldersFromLibrary();
+    await saveFolders();
     this.renderToolbar(scope);
     if (scope === 'projects') Proj.load(); else Library.renderGrid();
     toast('Pasta renomeada.');
@@ -444,9 +828,10 @@ const Folders = {
       Proj.load();
     }
 
-    saveFolders();
+    if (scope === 'library') syncProjectFoldersFromLibrary();
+    if (!S.folders.projects.some(f => f.id === S.currentFolder.projects)) S.currentFolder.projects = 'root';
+    await saveFolders();
     this.renderToolbar(scope);
-    this.manage(scope);
     toast('Pasta removida.');
   },
 };
@@ -1273,7 +1658,7 @@ const Library = {
     if (!docs.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
     empty.style.display = 'none';
     grid.innerHTML = docs.sort((a, b) => b.addedAt - a.addedAt).map(d =>
-      `<div class="doc-card" onclick="Library.openById('${d.id}')">
+      `<div class="doc-card" draggable="true" onclick="Library.openById('${d.id}')" ondragstart="Folders.dragStart(event,'library','item','${d.id}')" ondragend="Folders.dragEnd(event)">
         <div class="doc-icon">📄</div>
         <div class="doc-title">${escHtml(d.title || d.name)}</div>
         <div class="doc-author">${escHtml(d.author || '—')}${d.year ? ' · ' + escHtml(d.year) : ''}</div>
@@ -1426,14 +1811,16 @@ const Proj = {
   _saveTimer: null,
 
   async load() {
-    const projs = (await DB.projects.all()).filter(p => Folders.isVisible('projects', p.folderId || null));
+    const allProjs = await DB.projects.all();
+    S.projectItems = allProjs;
+    const projs = allProjs.filter(p => Folders.isVisible('projects', p.folderId || null));
     Folders.renderToolbar('projects');
     const list  = document.getElementById('proj-list');
     const empty = document.getElementById('proj-empty');
     if (!projs.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
     empty.style.display = 'none';
     list.innerHTML = projs.sort((a, b) => b.updatedAt - a.updatedAt).map(p =>
-      `<div class="proj-card" onclick="Proj.open('${p.id}')">
+      `<div class="proj-card" draggable="true" onclick="Proj.open('${p.id}')" ondragstart="Folders.dragStart(event,'projects','item','${p.id}')" ondragend="Folders.dragEnd(event)">
         <span style="font-size:20px;">📄</span>
         <div style="flex:1;">
           <div style="font-size:14px;font-weight:500;">${escHtml(p.title)}</div>
@@ -1985,7 +2372,7 @@ const Search = {
     if (projHits.length) {
       html += sect('Projetos', projHits.length);
       html += projHits.map(p =>
-        `<div class="proj-card" onclick="Proj.open('${p.id}')">
+        `<div class="proj-card" draggable="true" onclick="Proj.open('${p.id}')" ondragstart="Folders.dragStart(event,'projects','item','${p.id}')" ondragend="Folders.dragEnd(event)">
           <span style="font-size:19px;">📄</span>
           <div style="flex:1;"><div style="font-size:14px;font-weight:500;">${escHtml(p.title)}</div></div>
         </div>`

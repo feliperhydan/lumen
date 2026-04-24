@@ -393,7 +393,6 @@ body{font-family:var(--font-ui);background:var(--bg);color:var(--text);height:10
   font-family:var(--font-read);font-size:16px;line-height:1.75;
   background:var(--bg);color:var(--text);
   padding:48px 60px;overflow-y:auto;
-  white-space:pre-wrap;word-break:break-word;
 }
 #proj-content:empty:before{
   content:attr(data-placeholder);

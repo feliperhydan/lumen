@@ -30,6 +30,7 @@ const DEFAULT_DB = {
 let db = clone(DEFAULT_DB);
 let writeQueue = Promise.resolve();
 const execFileAsync = promisify(execFile);
+let curlExecutablePromise = null;
 
 function clone(obj) {
   return JSON.parse(JSON.stringify(obj));
@@ -147,6 +148,33 @@ async function safeUnlink(filePath) {
   }
 }
 
+async function commandExists(command, versionArg = '--version') {
+  try {
+    await execFileAsync(command, [versionArg], { timeout: 4000, windowsHide: true });
+    return true;
+  } catch (_err) {
+    return false;
+  }
+}
+
+async function resolveCurlExecutable() {
+  if (!curlExecutablePromise) {
+    curlExecutablePromise = (async () => {
+      const candidates = process.platform === 'win32'
+        ? ['curl.exe', 'curl']
+        : ['curl'];
+
+      for (const candidate of candidates) {
+        if (await commandExists(candidate)) return candidate;
+      }
+
+      throw new Error('Curl nao esta disponivel neste sistema. Instale o curl ou adicione-o ao PATH.');
+    })();
+  }
+
+  return curlExecutablePromise;
+}
+
 function citationUrlForDoi(doi) {
   const normalizedDoi = normalizeString(doi).trim();
   return `https://citation.doi.org/format?doi=${normalizedDoi}&style=apa&lang=en-US`;
@@ -159,8 +187,10 @@ async function fetchCitationByCurl(doi) {
   }
 
   const url = citationUrlForDoi(normalizedDoi);
-  const { stdout } = await execFileAsync('/usr/bin/curl', [url], {
+  const curlExecutable = await resolveCurlExecutable();
+  const { stdout } = await execFileAsync(curlExecutable, [url], {
     maxBuffer: 1024 * 1024,
+    windowsHide: true,
   });
   const citation = String(stdout || '').trim();
   if (!citation) {

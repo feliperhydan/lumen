@@ -180,6 +180,11 @@ function citationUrlForDoi(doi) {
   return `https://citation.doi.org/format?doi=${normalizedDoi}&style=apa&lang=en-US`;
 }
 
+function crossrefUrlForDoi(doi) {
+  const normalizedDoi = normalizeString(doi).trim();
+  return `https://api.crossref.org/works/${encodeURIComponent(normalizedDoi)}`;
+}
+
 async function fetchCitationByCurl(doi) {
   const normalizedDoi = normalizeString(doi).trim();
   if (!normalizedDoi) {
@@ -205,6 +210,91 @@ async function fetchCitationByDoi(doi) {
     throw new Error('DOI obrigatorio.');
   }
   return fetchCitationByCurl(normalizedDoi);
+}
+
+async function fetchJsonByCurl(url) {
+  const curlExecutable = await resolveCurlExecutable();
+  const { stdout } = await execFileAsync(curlExecutable, ['-L', '-H', 'Accept: application/json', url], {
+    maxBuffer: 1024 * 1024 * 4,
+    windowsHide: true,
+  });
+
+  let payload = null;
+  try {
+    payload = JSON.parse(String(stdout || '{}'));
+  } catch (_err) {
+    payload = null;
+  }
+
+  if (!payload || typeof payload !== 'object') {
+    throw new Error('Nao foi possivel interpretar os metadados retornados para este DOI.');
+  }
+
+  return payload;
+}
+
+function normalizeCrossrefTitle(value) {
+  if (Array.isArray(value)) {
+    return normalizeString(value.find(item => typeof item === 'string' && item.trim()), '').trim();
+  }
+  return normalizeString(value).trim();
+}
+
+function normalizeCrossrefAuthors(value) {
+  if (!Array.isArray(value)) return '';
+
+  return value
+    .map((author) => {
+      if (!author || typeof author !== 'object') return '';
+      const given = normalizeString(author.given).trim();
+      const family = normalizeString(author.family).trim();
+      const literal = normalizeString(author.literal).trim();
+      return [given, family].filter(Boolean).join(' ').trim() || literal;
+    })
+    .filter(Boolean)
+    .join('; ');
+}
+
+function normalizeCrossrefYear(message) {
+  const dateSources = [
+    message?.published?.['date-parts'],
+    message?.['published-print']?.['date-parts'],
+    message?.['published-online']?.['date-parts'],
+    message?.issued?.['date-parts'],
+    message?.created?.['date-parts'],
+  ];
+
+  for (const dateParts of dateSources) {
+    const year = Array.isArray(dateParts) && Array.isArray(dateParts[0]) ? dateParts[0][0] : null;
+    if (year) return String(year).trim();
+  }
+
+  return '';
+}
+
+async function fetchDoiMetadata(doi) {
+  const normalizedDoi = normalizeString(doi).trim();
+  if (!normalizedDoi) {
+    throw new Error('DOI obrigatorio.');
+  }
+
+  const payload = await fetchJsonByCurl(crossrefUrlForDoi(normalizedDoi));
+  const message = payload && typeof payload.message === 'object' ? payload.message : payload;
+  const title = normalizeCrossrefTitle(message?.title);
+  if (!title) {
+    throw new Error('Nao foi possivel localizar um titulo valido para este DOI.');
+  }
+  const author = normalizeCrossrefAuthors(message?.author);
+  const year = normalizeCrossrefYear(message);
+
+  return {
+    doi: normalizedDoi,
+    title,
+    author,
+    year,
+    source: 'crossref',
+    raw: message,
+  };
 }
 
 const upload = multer({
@@ -323,6 +413,51 @@ app.get('/api/pdfs/:id/citation', async (req, res, next) => {
       doi,
       cached: false,
       cachedAt: updated.citationCachedAt,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/pdfs/:id/sync-doi-metadata', async (req, res, next) => {
+  try {
+    const doc = byId(db.pdfs, req.params.id);
+    if (!doc) {
+      res.status(404).json({ error: 'Documento nao encontrado.' });
+      return;
+    }
+
+    if (normalizeString(doc.type).trim().toLowerCase() !== 'artigo') {
+      res.status(400).json({ error: 'A sincronizacao automatica por DOI esta disponivel apenas para artigos/papers cientificos.' });
+      return;
+    }
+
+    const doi = normalizeString(doc.doi).trim();
+    if (!doi) {
+      res.status(400).json({ error: 'Este artigo nao possui DOI salvo.' });
+      return;
+    }
+
+    const metadata = await fetchDoiMetadata(doi);
+    const updated = {
+      ...doc,
+      title: metadata.title,
+      author: metadata.author,
+      year: metadata.year,
+    };
+
+    upsert('pdfs', updated);
+    await saveDb();
+
+    res.json({
+      doc: updated,
+      metadata: {
+        doi: metadata.doi,
+        title: metadata.title,
+        author: metadata.author,
+        year: metadata.year,
+        source: metadata.source,
+      },
     });
   } catch (err) {
     next(err);

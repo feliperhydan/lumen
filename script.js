@@ -92,6 +92,7 @@ const DB = (() => {
         const suffix = refresh ? '?refresh=1' : '';
         return request(`/pdfs/${encodeURIComponent(id)}/citation${suffix}`);
       },
+      syncDoiMetadata: id => request(`/pdfs/${encodeURIComponent(id)}/sync-doi-metadata`, {method: 'POST'}),
       getBinary: async id => {
         const res = await fetch(`${API_BASE}/pdfs/${encodeURIComponent(id)}/file`);
         if (!res.ok) throw new Error('Falha ao carregar PDF do servidor.');
@@ -1789,6 +1790,7 @@ const Library = {
   editMeta(id) {
     const d = S.docs.find(x => x.id === id);
     if (!d) return;
+    const isArticle = isArticleDoc(d);
     const tagsHtml = (d.tags || []).map(t =>
       `<span class="tag-pill">${escHtml(t)}<button onclick="Library._removeTagInModal('${escHtml(t)}')">×</button></span>`
     ).join('');
@@ -1815,6 +1817,12 @@ const Library = {
         <select id="em-folder">${Folders.optionTags('library', d.folderId || 'root', true)}</select>
       </div>
       <div class="fg"><label>DOI</label><input id="em-doi" placeholder="10.xxxx/xxxx" value="${escHtml(d.doi||'')}"></div>
+      ${isArticle ? `
+        <div class="meta-doi-tools">
+          <button class="btn btn-sm" id="em-sync-title-btn" onclick="Library.syncTitleFromDoi('${id}')">Atualizar dados pelo DOI</button>
+          <span class="meta-doi-tip">Usa os dados do DOI para preencher tÃ­tulo, autor(es) e ano automaticamente.</span>
+        </div>
+      ` : ''}
       <div class="fg">
         <label>Tags <small style="font-weight:400;color:var(--text3)">(Enter para adicionar)</small></label>
         <div class="tags-wrap" id="em-tags-wrap" onclick="document.getElementById('em-tag-in').focus()">
@@ -1856,6 +1864,46 @@ const Library = {
     });
   },
 
+  async syncTitleFromDoi(id) {
+    const d = S.docs.find(x => x.id === id);
+    if (!d) return;
+    if (!isArticleDoc(d)) {
+      toast('A atualizacao automatica por DOI esta disponivel apenas para artigos.');
+      return;
+    }
+
+    const doiInput = document.getElementById('em-doi');
+    const doi = String(doiInput?.value || '').trim();
+    if (!doi) {
+      toast('Informe um DOI antes de tentar preencher o titulo.');
+      return;
+    }
+
+    d.doi = doi;
+    const btn = document.getElementById('em-sync-title-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Buscando titulo...';
+    }
+
+    try {
+      await DB.pdfs.save(d);
+      const result = await syncDocTitleFromDoi(d, { refreshUi: true });
+      document.getElementById('em-title').value = d.title || d.name;
+      document.getElementById('em-author').value = d.author || '';
+      document.getElementById('em-year').value = d.year || '';
+      toast(result?.metadata?.title ? 'Titulo, autores e ano atualizados automaticamente pelo DOI.' : 'Metadados sincronizados pelo DOI.');
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Falha ao buscar metadados pelo DOI.');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Atualizar dados pelo DOI';
+      }
+    }
+  },
+
   async saveMeta(id) {
     const d = S.docs.find(x => x.id === id);
     if (!d) return;
@@ -1873,6 +1921,9 @@ const Library = {
     if (S.currentDoc?.id === id) {
       S.currentDoc = d;
       UI.renderPanelInfo(d);
+      document.getElementById('doc-title-hdr').textContent = d.title || d.name;
+      const readerName = document.getElementById('reader-doc-name');
+      if (readerName) readerName.textContent = d.title || d.name;
       PV.updateReaderActions(d);
     }
     toast('Metadados salvos!');
@@ -2631,7 +2682,16 @@ const UI = {
         const ix = S.docs.findIndex(d => d.id === savedDoc.id);
         if (ix >= 0) S.docs[ix] = savedDoc;
         else S.docs.push(savedDoc);
-        if (detectedDoi) toast(`"${savedDoc.title}" adicionado com DOI identificado.`);
+        if (fileType === 'artigo' && detectedDoi) {
+          try {
+            const result = await syncDocTitleFromDoi(savedDoc);
+            if (result?.metadata?.title) toast(`"${savedDoc.title}" adicionado com DOI, tÃ­tulo, autores e ano identificados.`);
+            else toast(`"${savedDoc.title}" adicionado com DOI identificado.`);
+          } catch (metaErr) {
+            console.warn('Falha ao sincronizar titulo automatico pelo DOI.', metaErr);
+            toast(`"${savedDoc.title}" adicionado com DOI identificado.`);
+          }
+        }
         else if (fileType === 'artigo') toast(`"${savedDoc.title}" adicionado. DOI não encontrado automaticamente.`);
         else toast(`"${savedDoc.title}" adicionado!`);
       } catch(err) {
@@ -2778,6 +2838,9 @@ function formatBytes(bytes) {
   const value = num / (1024 ** exp);
   return `${value >= 10 || exp === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exp]}`;
 }
+function isArticleDoc(doc) {
+  return String(doc?.type || '').trim().toLowerCase() === 'artigo';
+}
 function cleanDoi(raw) {
   return String(raw || '')
     .replace(/^doi:\s*/i, '')
@@ -2824,6 +2887,34 @@ async function extractDoiFromPdfFile(file, maxPages = 6) {
   }
 
   return '';
+}
+async function syncDocTitleFromDoi(doc, options = {}) {
+  if (!doc || !doc.id || !isArticleDoc(doc)) return null;
+  if (!String(doc.doi || '').trim()) return null;
+
+  const payload = await DB.pdfs.syncDoiMetadata(doc.id);
+  const updatedDoc = payload?.doc;
+  if (!updatedDoc) {
+    throw new Error('Nao foi possivel atualizar os metadados pelo DOI.');
+  }
+
+  Object.assign(doc, updatedDoc);
+  const ix = S.docs.findIndex(item => item.id === doc.id);
+  if (ix >= 0) S.docs[ix] = doc;
+  if (S.currentDoc?.id === doc.id) S.currentDoc = doc;
+
+  if (options.refreshUi) {
+    Library.renderGrid();
+    Library.renderSidebar();
+    if (S.currentDoc?.id === doc.id) {
+      UI.renderPanelInfo(doc);
+      document.getElementById('doc-title-hdr').textContent = doc.title || doc.name;
+      const readerName = document.getElementById('reader-doc-name');
+      if (readerName) readerName.textContent = doc.title || doc.name;
+    }
+  }
+
+  return { doc, metadata: payload?.metadata || null };
 }
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1,3),16),

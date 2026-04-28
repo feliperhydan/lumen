@@ -544,6 +544,8 @@ body{font-family:var(--font-ui);background:var(--bg);color:var(--text);height:10
 .btn-d:hover{background:rgba(220,38,38,.06);}
 .btn-ghost{border-color:transparent;}
 .btn-sm{padding:5px 10px;font-size:12px;}
+.meta-doi-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-4px 0 12px;}
+.meta-doi-tip{font-size:11px;line-height:1.5;color:var(--text3);}
 
 /* Tags input */
 .tags-wrap{display:flex;flex-wrap:wrap;gap:5px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;min-height:36px;background:var(--surface);cursor:text;}

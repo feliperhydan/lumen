@@ -18,6 +18,23 @@ const DEF_CATS = [
 ];
 
 const DEF_FOLDER_NAMES = ['Artigos', 'Livros', 'Materiais Estrangeiros'];
+const FILE_UPLOAD_TYPES = [
+  {
+    value: 'artigo',
+    label: 'Artigo / Paper científico',
+    hint: 'Procura automaticamente o DOI no PDF antes de salvar.',
+  },
+  {
+    value: 'livro',
+    label: 'Livro',
+    hint: 'Mantém o fluxo normal de importação com tipo de livro.',
+  },
+  {
+    value: 'outro',
+    label: 'Outros',
+    hint: 'Importa o PDF sem tentativa automática de extrair DOI.',
+  },
+];
 
 /* ══════════════════════════════════════
    DATABASE — REST API (Node.js)
@@ -71,6 +88,10 @@ const DB = (() => {
       },
       save: d => put(`/pdfs/${encodeURIComponent(d.id)}`, d),
       get: id => request(`/pdfs/${encodeURIComponent(id)}`),
+      getCitation: (id, refresh = false) => {
+        const suffix = refresh ? '?refresh=1' : '';
+        return request(`/pdfs/${encodeURIComponent(id)}/citation${suffix}`);
+      },
       getBinary: async id => {
         const res = await fetch(`${API_BASE}/pdfs/${encodeURIComponent(id)}/file`);
         if (!res.ok) throw new Error('Falha ao carregar PDF do servidor.');
@@ -846,8 +867,18 @@ function toast(msg, dur=2400) {
   clearTimeout(_toastT); _toastT = setTimeout(()=>el.classList.remove('on'), dur);
 }
 const Modal = {
-  show(html) { document.getElementById('modal-body').innerHTML=html; document.getElementById('moverlay').classList.add('on'); },
-  hide() { document.getElementById('moverlay').classList.remove('on'); },
+  _onHide: null,
+  show(html, options = {}) {
+    this._onHide = typeof options.onHide === 'function' ? options.onHide : null;
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('moverlay').classList.add('on');
+  },
+  hide() {
+    document.getElementById('moverlay').classList.remove('on');
+    const onHide = this._onHide;
+    this._onHide = null;
+    if (onHide) onHide();
+  },
 };
 
 /* ══════════════════════════════════════
@@ -992,11 +1023,62 @@ const RP = {
 const PV = {
   // Cancellation token: ao abrir novo doc ou mudar zoom, aborta renders anteriores
   _renderToken: 0,
+  _citationBusy: false,
+
+  updateReaderActions(doc = S.currentDoc) {
+    const copyBtn = document.getElementById('copy-ref-btn');
+    if (!copyBtn) return;
+
+    const isScientificPaper = String(doc?.type || '').trim().toLowerCase() === 'artigo';
+    const hasDoi = Boolean(String(doc?.doi || '').trim());
+    copyBtn.style.display = isScientificPaper && hasDoi ? 'inline-flex' : 'none';
+    copyBtn.disabled = this._citationBusy;
+    copyBtn.textContent = this._citationBusy ? '⏳ Buscando referência...' : '📋 Copiar Referência';
+  },
+
+  async copyCitation() {
+    const doc = S.currentDoc;
+    if (!doc) return;
+    if (this._citationBusy) return;
+    if (String(doc.type || '').trim().toLowerCase() !== 'artigo') {
+      toast('A cópia automática de referência está disponível apenas para papers científicos.');
+      return;
+    }
+    if (!String(doc.doi || '').trim()) {
+      toast('Este paper ainda não possui DOI salvo.');
+      return;
+    }
+
+    this._citationBusy = true;
+    this.updateReaderActions(doc);
+
+    try {
+      const payload = await DB.pdfs.getCitation(doc.id);
+      const citation = String(payload?.citation || '').trim();
+      if (!citation) throw new Error('Nenhuma referência foi retornada para este DOI.');
+
+      doc.citationApa = citation;
+      doc.citationCachedAt = Number(payload?.cachedAt) || Date.now();
+      const ix = S.docs.findIndex(item => item.id === doc.id);
+      if (ix >= 0) S.docs[ix] = doc;
+
+      await navigator.clipboard.writeText(citation);
+      toast(payload?.cached ? 'Referência copiada do cache!' : 'Referência copiada!');
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Falha ao copiar referência.');
+    } finally {
+      this._citationBusy = false;
+      this.updateReaderActions(doc);
+    }
+  },
 
   async open(doc) {
     S.currentDoc = doc;
     S.currentPage = 1;
     S.highlights = await DB.highlights.byPDF(doc.id);
+    this._citationBusy = false;
+    this.updateReaderActions(doc);
 
     const scroller = document.getElementById('pdf-scroller');
     scroller.innerHTML = '<div class="loading"><div class="spin"></div>Carregando PDF…</div>';
@@ -1788,7 +1870,11 @@ const Library = {
     d.tags   = [...this._modalTags];
     await DB.pdfs.save(d);
     Modal.hide(); this.renderGrid(); this.renderSidebar();
-    if (S.currentDoc?.id === id) { S.currentDoc = d; UI.renderPanelInfo(d); }
+    if (S.currentDoc?.id === id) {
+      S.currentDoc = d;
+      UI.renderPanelInfo(d);
+      PV.updateReaderActions(d);
+    }
     toast('Metadados salvos!');
   },
 
@@ -2396,6 +2482,7 @@ const VIEWS = [
 ];
 
 const UI = {
+  _uploadPrompt: null,
   nav(view, updateNav = true) {
     S.view = view;
     const isReader = view === 'reader' || view === 'suco';
@@ -2440,21 +2527,103 @@ const UI = {
 
   upload() { document.getElementById('file-input').click(); },
 
+  promptUploadTypes(files) {
+    const rows = files.map((file, i) => `
+      <div class="upload-kind-row">
+        <div class="upload-kind-meta">
+          <div class="upload-kind-name">${escHtml(file.name)}</div>
+          <div class="upload-kind-size">${formatBytes(file.size)}</div>
+        </div>
+        <div class="fg" style="margin-bottom:0;">
+          <label for="upload-kind-${i}">Tipo do arquivo</label>
+          <select id="upload-kind-${i}" class="upload-kind-select">
+            ${FILE_UPLOAD_TYPES.map(type => `
+              <option value="${type.value}" ${type.value === 'artigo' ? 'selected' : ''}>${escHtml(type.label)}</option>
+            `).join('')}
+          </select>
+        </div>
+      </div>
+    `).join('');
+
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      this._uploadPrompt = { files, finish };
+      Modal.show(`
+        <h3>Classificar arquivos</h3>
+        <p class="modal-subtle">
+          Escolha como cada PDF deve entrar na biblioteca. Para arquivos marcados como
+          <strong>artigo / paper científico</strong>, o Lumen tenta localizar o DOI automaticamente.
+        </p>
+        <div class="upload-kind-list">${rows}</div>
+        <div class="upload-kind-legend">
+          ${FILE_UPLOAD_TYPES.map(type => `
+            <div class="upload-kind-legend-item">
+              <strong>${escHtml(type.label)}</strong>
+              <span>${escHtml(type.hint)}</span>
+            </div>
+          `).join('')}
+        </div>
+        <div class="mactions">
+          <button class="btn" onclick="UI.cancelUploadKinds()">Cancelar</button>
+          <button class="btn btn-p" onclick="UI.confirmUploadKinds()">Continuar</button>
+        </div>
+      `, {
+        onHide: () => {
+          this._uploadPrompt = null;
+          finish(null);
+        },
+      });
+    });
+  },
+
+  confirmUploadKinds() {
+    if (!this._uploadPrompt) return;
+    const selectedTypes = this._uploadPrompt.files.map((_file, i) => {
+      return document.getElementById(`upload-kind-${i}`)?.value || 'outro';
+    });
+    const finish = this._uploadPrompt.finish;
+    this._uploadPrompt = null;
+    finish(selectedTypes);
+    Modal.hide();
+  },
+
+  cancelUploadKinds() {
+    Modal.hide();
+  },
+
   async onUpload(e) {
     const files = Array.from(e.target.files);
     if (!files.length) return;
+    const selectedTypes = await this.promptUploadTypes(files);
+    if (!selectedTypes) {
+      e.target.value = '';
+      return;
+    }
     toast(`Importando ${files.length} arquivo(s)…`);
 
-    for (const file of files) {
+    for (const [i, file] of files.entries()) {
       try {
         const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
         const currentFolderId = (S.currentFolder.library && S.currentFolder.library !== 'root')
           ? S.currentFolder.library
           : null;
+        const fileType = selectedTypes[i] || 'outro';
+        let detectedDoi = '';
+
+        if (fileType === 'artigo') {
+          detectedDoi = await extractDoiFromPdfFile(file);
+        }
+
         const docPayload = {
           id, name: file.name.replace(/\.pdf$/i, ''),
           title: file.name.replace(/\.pdf$/i, ''),
-          author: '', year: '', type: 'artigo', lang: 'pt', doi: '', tags: [],
+          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, tags: [],
           folderId: currentFolderId,
           addedAt: Date.now(), size: file.size,
         };
@@ -2462,7 +2631,9 @@ const UI = {
         const ix = S.docs.findIndex(d => d.id === savedDoc.id);
         if (ix >= 0) S.docs[ix] = savedDoc;
         else S.docs.push(savedDoc);
-        toast(`"${savedDoc.title}" adicionado!`);
+        if (detectedDoi) toast(`"${savedDoc.title}" adicionado com DOI identificado.`);
+        else if (fileType === 'artigo') toast(`"${savedDoc.title}" adicionado. DOI não encontrado automaticamente.`);
+        else toast(`"${savedDoc.title}" adicionado!`);
       } catch(err) {
         console.error(err);
         toast(`Erro ao importar: ${file.name}`);
@@ -2598,6 +2769,61 @@ function escHtml(s) {
     .replace(/</g,  '&lt;')
     .replace(/>/g,  '&gt;')
     .replace(/"/g,  '&quot;');
+}
+function formatBytes(bytes) {
+  const num = Number(bytes) || 0;
+  if (!num) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const exp = Math.min(Math.floor(Math.log(num) / Math.log(1024)), units.length - 1);
+  const value = num / (1024 ** exp);
+  return `${value >= 10 || exp === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exp]}`;
+}
+function cleanDoi(raw) {
+  return String(raw || '')
+    .replace(/^doi:\s*/i, '')
+    .replace(/[)\]}.,;:]+$/g, '')
+    .trim();
+}
+function matchDoi(text) {
+  const source = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!source) return '';
+
+  const direct = source.match(/\b10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i);
+  if (direct?.[0]) return cleanDoi(direct[0]);
+
+  const labelled = source.match(/doi\s*[:\s]\s*(10\.\d{4,9}\/[-._;()/:A-Z0-9]+)/i);
+  if (labelled?.[1]) return cleanDoi(labelled[1]);
+
+  return '';
+}
+async function extractDoiFromPdfFile(file, maxPages = 6) {
+  const data = await file.arrayBuffer();
+  const loadingTask = pdfjsLib.getDocument({data});
+
+  try {
+    const pdf = await loadingTask.promise;
+    const total = Math.min(pdf.numPages, maxPages);
+    let text = '';
+
+    for (let pageNum = 1; pageNum <= total; pageNum += 1) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      text += ` ${content.items.map(item => item.str || '').join(' ')}`;
+
+      const doi = matchDoi(text);
+      if (doi) return doi;
+    }
+  } catch (err) {
+    console.warn('Falha ao extrair DOI automaticamente do PDF.', err);
+  } finally {
+    if (typeof loadingTask.destroy === 'function') {
+      try {
+        await loadingTask.destroy();
+      } catch (_err) {}
+    }
+  }
+
+  return '';
 }
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1,3),16),

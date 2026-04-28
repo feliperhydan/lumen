@@ -1,7 +1,9 @@
 const express = require('express');
 const multer = require('multer');
+const { execFile } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
+const { promisify } = require('util');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,6 +29,7 @@ const DEFAULT_DB = {
 
 let db = clone(DEFAULT_DB);
 let writeQueue = Promise.resolve();
+const execFileAsync = promisify(execFile);
 
 function clone(obj) {
   return JSON.parse(JSON.stringify(obj));
@@ -57,6 +60,8 @@ function normalizeDoc(input = {}, fallbackName = 'Documento') {
     type: normalizeString(input.type, 'artigo').trim() || 'artigo',
     lang: normalizeString(input.lang, 'pt').trim() || 'pt',
     doi: normalizeString(input.doi).trim(),
+    citationApa: normalizeString(input.citationApa).trim(),
+    citationCachedAt: Number(input.citationCachedAt) || 0,
     folderId: normalizeString(input.folderId).trim() || null,
     tags,
     size: Number(input.size) || 0,
@@ -142,6 +147,36 @@ async function safeUnlink(filePath) {
   }
 }
 
+function citationUrlForDoi(doi) {
+  const normalizedDoi = normalizeString(doi).trim();
+  return `https://citation.doi.org/format?doi=${normalizedDoi}&style=apa&lang=en-US`;
+}
+
+async function fetchCitationByCurl(doi) {
+  const normalizedDoi = normalizeString(doi).trim();
+  if (!normalizedDoi) {
+    throw new Error('DOI obrigatorio.');
+  }
+
+  const url = citationUrlForDoi(normalizedDoi);
+  const { stdout } = await execFileAsync('/usr/bin/curl', [url], {
+    maxBuffer: 1024 * 1024,
+  });
+  const citation = String(stdout || '').trim();
+  if (!citation) {
+    throw new Error('Nenhuma referencia foi retornada para este DOI.');
+  }
+  return citation;
+}
+
+async function fetchCitationByDoi(doi) {
+  const normalizedDoi = normalizeString(doi).trim();
+  if (!normalizedDoi) {
+    throw new Error('DOI obrigatorio.');
+  }
+  return fetchCitationByCurl(normalizedDoi);
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 1024 * 1024 * 200 },
@@ -209,6 +244,56 @@ app.get('/api/pdfs/:id/file', async (req, res, next) => {
     const fileName = doc.fileName || `${doc.id}.pdf`;
     const fullPath = path.join(PDF_DIR, fileName);
     res.sendFile(fullPath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/pdfs/:id/citation', async (req, res, next) => {
+  try {
+    const doc = byId(db.pdfs, req.params.id);
+    if (!doc) {
+      res.status(404).json({ error: 'Documento nao encontrado.' });
+      return;
+    }
+
+    if (normalizeString(doc.type).trim().toLowerCase() !== 'artigo') {
+      res.status(400).json({ error: 'A referencia automatica esta disponivel apenas para artigos/papers cientificos.' });
+      return;
+    }
+
+    const doi = normalizeString(doc.doi).trim();
+    if (!doi) {
+      res.status(400).json({ error: 'Este artigo nao possui DOI salvo.' });
+      return;
+    }
+
+    const wantsRefresh = String(req.query.refresh || '').trim() === '1';
+    if (!wantsRefresh && normalizeString(doc.citationApa).trim()) {
+      res.json({
+        citation: doc.citationApa,
+        doi,
+        cached: true,
+        cachedAt: Number(doc.citationCachedAt) || 0,
+      });
+      return;
+    }
+
+    const citation = await fetchCitationByDoi(doi);
+    const updated = {
+      ...doc,
+      citationApa: citation,
+      citationCachedAt: Date.now(),
+    };
+    upsert('pdfs', updated);
+    await saveDb();
+
+    res.json({
+      citation,
+      doi,
+      cached: false,
+      cachedAt: updated.citationCachedAt,
+    });
   } catch (err) {
     next(err);
   }

@@ -32,5 +32,6 @@ PARTE 3: Editor de texto
 
 Tip tap, ferramentas de texto
 Organização em páginas
+Editor de texto para Relatórios na aba projetos -> Exportação de PDFs da aba de projetos para aba de Bibliotecas 
 Download de projetos e suco como arquivos PDF
 Check-Workflow - Limpar excessos e funcionamento workflow

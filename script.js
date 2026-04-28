@@ -35,6 +35,16 @@ const FILE_UPLOAD_TYPES = [
     hint: 'Prepara metadados próprios para tese, dissertação e TCC.',
   },
   {
+    value: 'capitulo-livro',
+    label: 'Capítulo de Livro',
+    hint: 'Prepara metadados do capítulo e do livro de origem.',
+  },
+  {
+    value: 'relatorio',
+    label: 'Relatório',
+    hint: 'Prepara metadados próprios para relatórios acadêmicos e técnicos.',
+  },
+  {
     value: 'outro',
     label: 'Outros',
     hint: 'Importa o PDF sem tentativa automática de extrair DOI.',
@@ -1754,6 +1764,11 @@ const Library = {
         <button class="doc-edit" onclick="event.stopPropagation();Library.editMeta('${d.id}')">✏</button>
       </div>`
     ).join('');
+    const sortedDocs = docs.sort((a, b) => b.addedAt - a.addedAt);
+    Array.from(grid.querySelectorAll('.doc-author')).forEach((el, index) => {
+      const doc = sortedDocs[index];
+      if (doc) el.textContent = libraryCardMeta(doc);
+    });
   },
 
   renderSidebar() {
@@ -1798,6 +1813,8 @@ const Library = {
     const isArticle = isArticleDoc(d);
     const isBook = isBookDoc(d);
     const isAcademicWork = isAcademicWorkDoc(d);
+    const isBookChapter = isBookChapterDoc(d);
+    const isReport = isReportDoc(d);
     const tagsHtml = (d.tags || []).map(t =>
       `<span class="tag-pill">${escHtml(t)}<button onclick="Library._removeTagInModal('${escHtml(t)}')">×</button></span>`
     ).join('');
@@ -1808,7 +1825,7 @@ const Library = {
       </div>
       <div class="fg-row">
         <div class="fg"><label>Autor(es)</label><input id="em-author" value="${escHtml(d.author||'')}"></div>
-        <div class="fg" style="max-width:80px;"><label>Ano</label><input id="em-year" value="${escHtml(d.year||'')}"></div>
+        <div class="fg" id="em-year-wrap" style="max-width:80px;${isReport ? 'display:none;' : ''}"><label>Ano</label><input id="em-year" value="${escHtml(d.year||'')}"></div>
       </div>
       <div class="fg-row">
         <div class="fg"><label>Tipo</label>
@@ -1818,7 +1835,7 @@ const Library = {
             ).join('')}
           </select>
         </div>
-        <div class="fg" style="max-width:80px;"><label>Idioma</label><input id="em-lang" value="${escHtml(d.lang||'')}"></div>
+        <div class="fg" id="em-lang-wrap" style="max-width:80px;${isReport ? 'display:none;' : ''}"><label>Idioma</label><input id="em-lang" value="${escHtml(d.lang||'')}"></div>
       </div>
       <div class="fg"><label>Pasta</label>
         <select id="em-folder">${Folders.optionTags('library', d.folderId || 'root', true)}</select>
@@ -1848,6 +1865,36 @@ const Library = {
         </div>
         <div class="fg" style="max-width:160px;"><label>Número de páginas</label><input id="em-academic-page-count" inputmode="numeric" value="${escHtml(d.pageCount||'')}"></div>
       </div>
+      <div id="em-book-chapter-fields" style="${isBookChapter ? '' : 'display:none;'}">
+        <div class="fg"><label>Título do Livro</label><input id="em-book-title" value="${escHtml(d.bookTitle||'')}"></div>
+        <div class="fg-row">
+          <div class="fg"><label>ISBN</label><input id="em-chapter-isbn" placeholder="978-xx-xxxx-xxxx-x" value="${escHtml(d.isbn||'')}"></div>
+          <div class="fg"><label>Editora</label><input id="em-chapter-publisher" value="${escHtml(d.publisher||'')}"></div>
+        </div>
+        <div class="fg-row">
+          <div class="fg"><label>Edição</label><input id="em-chapter-edition" value="${escHtml(d.edition||'')}"></div>
+          <div class="fg"><label>Páginas (intervalo)</label><input id="em-page-range" placeholder="p. 25-48" value="${escHtml(d.pageRange||'')}"></div>
+        </div>
+      </div>
+      <div id="em-report-fields" style="${isReport ? '' : 'display:none;'}">
+        <div class="fg"><label>Subtipo</label>
+          <select id="em-report-subtype">
+            ${['Experimental','Técnico','Projeto','Laboratório'].map(option =>
+              `<option value="${option}" ${String(d.reportSubtype||'').trim()===option?'selected':''}>${option}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="fg-row">
+          <div class="fg"><label>Instituição/Laboratório</label><input id="em-report-institution" value="${escHtml(d.institution||'')}"></div>
+          <div class="fg"><label>Responsável</label><input id="em-responsible" value="${escHtml(d.responsible||'')}"></div>
+        </div>
+        <div class="fg-row">
+          <div class="fg" style="max-width:180px;"><label>Data</label><input id="em-full-date" placeholder="dd/mm/aaaa" value="${escHtml(d.fullDate||'')}"></div>
+          <div class="fg"><label>Área/Disciplina</label><input id="em-area" value="${escHtml(d.area||'')}"></div>
+        </div>
+        <div class="fg"><label>Metodologia</label><textarea id="em-methodology" rows="4">${escHtml(d.methodology||'')}</textarea></div>
+        <div class="fg"><label>Resultados</label><textarea id="em-results" rows="4">${escHtml(d.results||'')}</textarea></div>
+      </div>
       ${isArticle ? `
         <div class="meta-doi-tools">
           <button class="btn btn-sm" id="em-sync-title-btn" onclick="Library.syncTitleFromDoi('${id}')">Atualizar dados pelo DOI</button>
@@ -1874,8 +1921,26 @@ const Library = {
       opt.textContent = 'Trabalho Acadêmico';
       typeSelect.insertBefore(opt, typeSelect.querySelector('option[value="outro"]'));
     }
+    if (typeSelect && !typeSelect.querySelector('option[value="capitulo-livro"]')) {
+      const opt = document.createElement('option');
+      opt.value = 'capitulo-livro';
+      opt.textContent = 'Capítulo de Livro';
+      typeSelect.insertBefore(opt, typeSelect.querySelector('option[value="outro"]'));
+    }
+    if (typeSelect && !typeSelect.querySelector('option[value="relatorio"]')) {
+      const opt = document.createElement('option');
+      opt.value = 'relatorio';
+      opt.textContent = 'Relatório';
+      typeSelect.insertBefore(opt, typeSelect.querySelector('option[value="outro"]'));
+    }
     if (typeSelect && String(d.type || '').trim().toLowerCase() === 'trabalho-academico') {
       typeSelect.value = 'trabalho-academico';
+    }
+    if (typeSelect && String(d.type || '').trim().toLowerCase() === 'capitulo-livro') {
+      typeSelect.value = 'capitulo-livro';
+    }
+    if (typeSelect && String(d.type || '').trim().toLowerCase() === 'relatorio') {
+      typeSelect.value = 'relatorio';
     }
     document.getElementById('em-type')?.addEventListener('change', () => this.updateMetaTypeFields());
     this.updateMetaTypeFields();
@@ -1912,17 +1977,27 @@ const Library = {
     const isArticle = type === 'artigo';
     const isBook = type === 'livro';
     const isAcademicWork = type === 'trabalho-academico';
+    const isBookChapter = type === 'capitulo-livro';
+    const isReport = type === 'relatorio';
 
     const doiWrap = document.getElementById('em-doi-wrap');
+    const yearWrap = document.getElementById('em-year-wrap');
+    const langWrap = document.getElementById('em-lang-wrap');
     const isbnWrap = document.getElementById('em-isbn-wrap');
     const bookFields = document.getElementById('em-book-fields');
     const academicFields = document.getElementById('em-academic-fields');
+    const bookChapterFields = document.getElementById('em-book-chapter-fields');
+    const reportFields = document.getElementById('em-report-fields');
     const doiTools = document.querySelector('.meta-doi-tools');
 
-    if (doiWrap) doiWrap.style.display = (isBook || isAcademicWork) ? 'none' : '';
+    if (yearWrap) yearWrap.style.display = isReport ? 'none' : '';
+    if (langWrap) langWrap.style.display = isReport ? 'none' : '';
+    if (doiWrap) doiWrap.style.display = (isBook || isAcademicWork || isBookChapter || isReport) ? 'none' : '';
     if (isbnWrap) isbnWrap.style.display = isBook ? '' : 'none';
     if (bookFields) bookFields.style.display = isBook ? '' : 'none';
     if (academicFields) academicFields.style.display = isAcademicWork ? '' : 'none';
+    if (bookChapterFields) bookChapterFields.style.display = isBookChapter ? '' : 'none';
+    if (reportFields) reportFields.style.display = isReport ? '' : 'none';
     if (doiTools) doiTools.style.display = isArticle ? '' : 'none';
   },
 
@@ -1987,6 +2062,14 @@ const Library = {
       d.program = '';
       d.advisor = '';
       d.coadvisor = '';
+      d.bookTitle = '';
+      d.pageRange = '';
+      d.reportSubtype = '';
+      d.responsible = '';
+      d.fullDate = '';
+      d.methodology = '';
+      d.results = '';
+      d.area = '';
     } else if (String(d.type || '').trim().toLowerCase() === 'trabalho-academico') {
       d.doi       = '';
       d.isbn      = '';
@@ -1998,6 +2081,54 @@ const Library = {
       d.program = document.getElementById('em-program')?.value.trim() || '';
       d.advisor = document.getElementById('em-advisor')?.value.trim() || '';
       d.coadvisor = document.getElementById('em-coadvisor')?.value.trim() || '';
+      d.bookTitle = '';
+      d.pageRange = '';
+      d.reportSubtype = '';
+      d.responsible = '';
+      d.fullDate = '';
+      d.methodology = '';
+      d.results = '';
+      d.area = '';
+    } else if (String(d.type || '').trim().toLowerCase() === 'capitulo-livro') {
+      d.doi       = '';
+      d.isbn      = document.getElementById('em-chapter-isbn')?.value.trim() || '';
+      d.publisher = document.getElementById('em-chapter-publisher')?.value.trim() || '';
+      d.edition   = document.getElementById('em-chapter-edition')?.value.trim() || '';
+      d.pageCount = '';
+      d.academicSubtype = '';
+      d.institution = '';
+      d.program = '';
+      d.advisor = '';
+      d.coadvisor = '';
+      d.bookTitle = document.getElementById('em-book-title')?.value.trim() || '';
+      d.pageRange = document.getElementById('em-page-range')?.value.trim() || '';
+      d.reportSubtype = '';
+      d.responsible = '';
+      d.fullDate = '';
+      d.methodology = '';
+      d.results = '';
+      d.area = '';
+    } else if (String(d.type || '').trim().toLowerCase() === 'relatorio') {
+      d.doi       = '';
+      d.isbn      = '';
+      d.publisher = '';
+      d.edition   = '';
+      d.pageCount = '';
+      d.year = '';
+      d.lang = '';
+      d.academicSubtype = '';
+      d.program = '';
+      d.advisor = '';
+      d.coadvisor = '';
+      d.bookTitle = '';
+      d.pageRange = '';
+      d.reportSubtype = document.getElementById('em-report-subtype')?.value.trim() || 'Experimental';
+      d.institution = document.getElementById('em-report-institution')?.value.trim() || '';
+      d.responsible = document.getElementById('em-responsible')?.value.trim() || '';
+      d.fullDate = document.getElementById('em-full-date')?.value.trim() || '';
+      d.methodology = document.getElementById('em-methodology')?.value.trim() || '';
+      d.results = document.getElementById('em-results')?.value.trim() || '';
+      d.area = document.getElementById('em-area')?.value.trim() || '';
     } else {
       d.doi       = document.getElementById('em-doi')?.value.trim() || '';
       d.isbn      = '';
@@ -2009,6 +2140,14 @@ const Library = {
       d.program = '';
       d.advisor = '';
       d.coadvisor = '';
+      d.bookTitle = '';
+      d.pageRange = '';
+      d.reportSubtype = '';
+      d.responsible = '';
+      d.fullDate = '';
+      d.methodology = '';
+      d.results = '';
+      d.area = '';
     }
     d.tags   = [...this._modalTags];
     await DB.pdfs.save(d);
@@ -2769,7 +2908,7 @@ const UI = {
         const docPayload = {
           id, name: file.name.replace(/\.pdf$/i, ''),
           title: file.name.replace(/\.pdf$/i, ''),
-          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, isbn: '', publisher: '', edition: '', pageCount: '', academicSubtype: '', institution: '', program: '', advisor: '', coadvisor: '', tags: [],
+          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, isbn: '', publisher: '', edition: '', pageCount: '', academicSubtype: '', institution: '', program: '', advisor: '', coadvisor: '', bookTitle: '', pageRange: '', reportSubtype: '', responsible: '', fullDate: '', methodology: '', results: '', area: '', tags: [],
           folderId: currentFolderId,
           addedAt: Date.now(), size: file.size,
         };
@@ -2819,14 +2958,22 @@ const UI = {
       ${doc.year   ? `<div>📅 ${escHtml(doc.year)}</div>`   : ''}
       ${doc.doi    ? `<div style="word-break:break-all;">DOI: ${escHtml(doc.doi)}</div>` : ''}
       ${doc.isbn   ? `<div style="word-break:break-all;">ISBN: ${escHtml(doc.isbn)}</div>` : ''}
+      ${doc.bookTitle ? `<div>Livro: ${escHtml(doc.bookTitle)}</div>` : ''}
       ${doc.publisher ? `<div>Editora: ${escHtml(doc.publisher)}</div>` : ''}
       ${doc.edition ? `<div>Edição: ${escHtml(doc.edition)}</div>` : ''}
       ${doc.academicSubtype ? `<div>Subtipo: ${escHtml(doc.academicSubtype)}</div>` : ''}
+      ${doc.reportSubtype ? `<div>Subtipo: ${escHtml(doc.reportSubtype)}</div>` : ''}
       ${doc.institution ? `<div>Instituição: ${escHtml(doc.institution)}</div>` : ''}
       ${doc.program ? `<div>Programa/Curso: ${escHtml(doc.program)}</div>` : ''}
+      ${doc.responsible ? `<div>Responsável: ${escHtml(doc.responsible)}</div>` : ''}
+      ${doc.fullDate ? `<div>Data: ${escHtml(doc.fullDate)}</div>` : ''}
+      ${doc.area ? `<div>Área/Disciplina: ${escHtml(doc.area)}</div>` : ''}
       ${doc.advisor ? `<div>Orientador: ${escHtml(doc.advisor)}</div>` : ''}
       ${doc.coadvisor ? `<div>Coorientador: ${escHtml(doc.coadvisor)}</div>` : ''}
+      ${doc.methodology ? `<div>Metodologia: ${escHtml(doc.methodology)}</div>` : ''}
+      ${doc.results ? `<div>Resultados: ${escHtml(doc.results)}</div>` : ''}
       ${doc.pageCount ? `<div>Páginas: ${escHtml(doc.pageCount)}</div>` : ''}
+      ${doc.pageRange ? `<div>Páginas: ${escHtml(doc.pageRange)}</div>` : ''}
       ${doc.type   ? `<div>📂 ${escHtml(doc.type)}</div>`   : ''}
       ${doc.lang   ? `<div>🌐 ${escHtml(doc.lang)}</div>`   : ''}
       ${doc.tags?.length ? `<div style="margin-top:5px;">${doc.tags.map(t=>`<span class="doc-tag">${escHtml(t)}</span>`).join(' ')}</div>` : ''}
@@ -2950,6 +3097,23 @@ function isBookDoc(doc) {
 }
 function isAcademicWorkDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'trabalho-academico';
+}
+function isBookChapterDoc(doc) {
+  return String(doc?.type || '').trim().toLowerCase() === 'capitulo-livro';
+}
+function isReportDoc(doc) {
+  return String(doc?.type || '').trim().toLowerCase() === 'relatorio';
+}
+function libraryCardMeta(doc) {
+  if (isReportDoc(doc)) {
+    return [
+      doc.author || '—',
+      doc.fullDate || null,
+      doc.reportSubtype || null,
+      doc.area || null,
+    ].filter(Boolean).join(' · ');
+  }
+  return `${doc.author || '—'}${doc.year ? ' · ' + doc.year : ''}`;
 }
 function cleanDoi(raw) {
   return String(raw || '')

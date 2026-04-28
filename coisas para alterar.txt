@@ -4,7 +4,7 @@ PARTE 1: Formatação de Layout
 
 ✓✓✓ Tamanho dos anexos na aba de projetos
 ✓✓✓ Titulo do artigo e DOI automaticamente no documento do PDF**
-Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
+✓✓✓ Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
 Zoom in e Zoom out manter o PDF na mesma página
 Visualizador de páginas separadinhas
 Sistema de pastas e subpastas
@@ -12,6 +12,8 @@ Sistema de pastas e subpastas
 Sistema de abas**
 Mudar nome lumen -> bibliotheca
 Check-Workflow - Limpar excessos e funcionamento workflow
+Colocar indices nos icones de trabalhos academicos e capitulos de livro
+Colocar o tipo do arquivo nos icones dos arquivos (ex: artigo, livro, capitlo de livro etc)
 
 PARTE 2: Complemento de ferramentas
 

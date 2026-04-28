@@ -1815,6 +1815,7 @@ const Library = {
     const isAcademicWork = isAcademicWorkDoc(d);
     const isBookChapter = isBookChapterDoc(d);
     const isReport = isReportDoc(d);
+    const isOther = isOtherDoc(d);
     const tagsHtml = (d.tags || []).map(t =>
       `<span class="tag-pill">${escHtml(t)}<button onclick="Library._removeTagInModal('${escHtml(t)}')">×</button></span>`
     ).join('');
@@ -1824,8 +1825,8 @@ const Library = {
         <div class="fg"><label>Título</label><input id="em-title" value="${escHtml(d.title||d.name)}"></div>
       </div>
       <div class="fg-row">
-        <div class="fg"><label>Autor(es)</label><input id="em-author" value="${escHtml(d.author||'')}"></div>
-        <div class="fg" id="em-year-wrap" style="max-width:80px;${isReport ? 'display:none;' : ''}"><label>Ano</label><input id="em-year" value="${escHtml(d.year||'')}"></div>
+        <div class="fg" id="em-author-wrap" style="${isOther ? 'display:none;' : ''}"><label>Autor(es)</label><input id="em-author" value="${escHtml(d.author||'')}"></div>
+        <div class="fg" id="em-year-wrap" style="max-width:80px;${(isReport || isOther) ? 'display:none;' : ''}"><label>Ano</label><input id="em-year" value="${escHtml(d.year||'')}"></div>
       </div>
       <div class="fg-row">
         <div class="fg"><label>Tipo</label>
@@ -1835,7 +1836,7 @@ const Library = {
             ).join('')}
           </select>
         </div>
-        <div class="fg" id="em-lang-wrap" style="max-width:80px;${isReport ? 'display:none;' : ''}"><label>Idioma</label><input id="em-lang" value="${escHtml(d.lang||'')}"></div>
+        <div class="fg" id="em-lang-wrap" style="max-width:80px;${(isReport || isOther) ? 'display:none;' : ''}"><label>Idioma</label><input id="em-lang" value="${escHtml(d.lang||'')}"></div>
       </div>
       <div class="fg"><label>Pasta</label>
         <select id="em-folder">${Folders.optionTags('library', d.folderId || 'root', true)}</select>
@@ -1894,6 +1895,19 @@ const Library = {
         </div>
         <div class="fg"><label>Metodologia</label><textarea id="em-methodology" rows="4">${escHtml(d.methodology||'')}</textarea></div>
         <div class="fg"><label>Resultados</label><textarea id="em-results" rows="4">${escHtml(d.results||'')}</textarea></div>
+      </div>
+      <div id="em-other-fields" style="${isOther ? '' : 'display:none;'}">
+        <div class="fg"><label>Subtipo</label>
+          <select id="em-other-subtype">
+            ${['Slide','Apostila','Documento Interno','Manual de Prática','TC','Material do curso'].map(option =>
+              `<option value="${option}" ${String(d.otherSubtype||'').trim()===option?'selected':''}>${option}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="fg"><label>Fonte</label><input id="em-source" value="${escHtml(d.source||'')}"></div>
+        <div class="fg"><label>Contexto</label><input id="em-context" value="${escHtml(d.context||'')}"></div>
+        <div class="fg" style="max-width:180px;"><label>Data</label><input id="em-other-date" placeholder="dd/mm/aaaa" value="${escHtml(d.fullDate||'')}"></div>
+        <div class="fg"><label>Descrição</label><textarea id="em-description" rows="4">${escHtml(d.description||'')}</textarea></div>
       </div>
       ${isArticle ? `
         <div class="meta-doi-tools">
@@ -1981,6 +1995,7 @@ const Library = {
     const isReport = type === 'relatorio';
 
     const doiWrap = document.getElementById('em-doi-wrap');
+    const authorWrap = document.getElementById('em-author-wrap');
     const yearWrap = document.getElementById('em-year-wrap');
     const langWrap = document.getElementById('em-lang-wrap');
     const isbnWrap = document.getElementById('em-isbn-wrap');
@@ -1988,16 +2003,22 @@ const Library = {
     const academicFields = document.getElementById('em-academic-fields');
     const bookChapterFields = document.getElementById('em-book-chapter-fields');
     const reportFields = document.getElementById('em-report-fields');
+    const otherFields = document.getElementById('em-other-fields');
     const doiTools = document.querySelector('.meta-doi-tools');
+    const isOther = type === 'outro';
 
+    if (authorWrap) authorWrap.style.display = isOther ? 'none' : '';
     if (yearWrap) yearWrap.style.display = isReport ? 'none' : '';
     if (langWrap) langWrap.style.display = isReport ? 'none' : '';
-    if (doiWrap) doiWrap.style.display = (isBook || isAcademicWork || isBookChapter || isReport) ? 'none' : '';
+    if (yearWrap) yearWrap.style.display = (isReport || isOther) ? 'none' : '';
+    if (langWrap) langWrap.style.display = (isReport || isOther) ? 'none' : '';
+    if (doiWrap) doiWrap.style.display = (isBook || isAcademicWork || isBookChapter || isReport || isOther) ? 'none' : '';
     if (isbnWrap) isbnWrap.style.display = isBook ? '' : 'none';
     if (bookFields) bookFields.style.display = isBook ? '' : 'none';
     if (academicFields) academicFields.style.display = isAcademicWork ? '' : 'none';
     if (bookChapterFields) bookChapterFields.style.display = isBookChapter ? '' : 'none';
     if (reportFields) reportFields.style.display = isReport ? '' : 'none';
+    if (otherFields) otherFields.style.display = isOther ? '' : 'none';
     if (doiTools) doiTools.style.display = isArticle ? '' : 'none';
   },
 
@@ -2070,6 +2091,10 @@ const Library = {
       d.methodology = '';
       d.results = '';
       d.area = '';
+      d.otherSubtype = '';
+      d.source = '';
+      d.context = '';
+      d.description = '';
     } else if (String(d.type || '').trim().toLowerCase() === 'trabalho-academico') {
       d.doi       = '';
       d.isbn      = '';
@@ -2089,6 +2114,10 @@ const Library = {
       d.methodology = '';
       d.results = '';
       d.area = '';
+      d.otherSubtype = '';
+      d.source = '';
+      d.context = '';
+      d.description = '';
     } else if (String(d.type || '').trim().toLowerCase() === 'capitulo-livro') {
       d.doi       = '';
       d.isbn      = document.getElementById('em-chapter-isbn')?.value.trim() || '';
@@ -2108,6 +2137,10 @@ const Library = {
       d.methodology = '';
       d.results = '';
       d.area = '';
+      d.otherSubtype = '';
+      d.source = '';
+      d.context = '';
+      d.description = '';
     } else if (String(d.type || '').trim().toLowerCase() === 'relatorio') {
       d.doi       = '';
       d.isbn      = '';
@@ -2129,6 +2162,36 @@ const Library = {
       d.methodology = document.getElementById('em-methodology')?.value.trim() || '';
       d.results = document.getElementById('em-results')?.value.trim() || '';
       d.area = document.getElementById('em-area')?.value.trim() || '';
+      d.otherSubtype = '';
+      d.source = '';
+      d.context = '';
+      d.description = '';
+    } else if (String(d.type || '').trim().toLowerCase() === 'outro') {
+      d.author = '';
+      d.year = '';
+      d.lang = '';
+      d.doi = '';
+      d.isbn = '';
+      d.publisher = '';
+      d.edition = '';
+      d.pageCount = '';
+      d.academicSubtype = '';
+      d.institution = '';
+      d.program = '';
+      d.advisor = '';
+      d.coadvisor = '';
+      d.bookTitle = '';
+      d.pageRange = '';
+      d.reportSubtype = '';
+      d.responsible = '';
+      d.fullDate = document.getElementById('em-other-date')?.value.trim() || '';
+      d.methodology = '';
+      d.results = '';
+      d.area = '';
+      d.otherSubtype = document.getElementById('em-other-subtype')?.value.trim() || 'Slide';
+      d.source = document.getElementById('em-source')?.value.trim() || '';
+      d.context = document.getElementById('em-context')?.value.trim() || '';
+      d.description = document.getElementById('em-description')?.value.trim() || '';
     } else {
       d.doi       = document.getElementById('em-doi')?.value.trim() || '';
       d.isbn      = '';
@@ -2148,6 +2211,10 @@ const Library = {
       d.methodology = '';
       d.results = '';
       d.area = '';
+      d.otherSubtype = '';
+      d.source = '';
+      d.context = '';
+      d.description = '';
     }
     d.tags   = [...this._modalTags];
     await DB.pdfs.save(d);
@@ -2908,7 +2975,7 @@ const UI = {
         const docPayload = {
           id, name: file.name.replace(/\.pdf$/i, ''),
           title: file.name.replace(/\.pdf$/i, ''),
-          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, isbn: '', publisher: '', edition: '', pageCount: '', academicSubtype: '', institution: '', program: '', advisor: '', coadvisor: '', bookTitle: '', pageRange: '', reportSubtype: '', responsible: '', fullDate: '', methodology: '', results: '', area: '', tags: [],
+          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, isbn: '', publisher: '', edition: '', pageCount: '', academicSubtype: '', institution: '', program: '', advisor: '', coadvisor: '', bookTitle: '', pageRange: '', reportSubtype: '', responsible: '', fullDate: '', methodology: '', results: '', area: '', otherSubtype: '', source: '', context: '', description: '', tags: [],
           folderId: currentFolderId,
           addedAt: Date.now(), size: file.size,
         };
@@ -2963,8 +3030,11 @@ const UI = {
       ${doc.edition ? `<div>Edição: ${escHtml(doc.edition)}</div>` : ''}
       ${doc.academicSubtype ? `<div>Subtipo: ${escHtml(doc.academicSubtype)}</div>` : ''}
       ${doc.reportSubtype ? `<div>Subtipo: ${escHtml(doc.reportSubtype)}</div>` : ''}
+      ${doc.otherSubtype ? `<div>Subtipo: ${escHtml(doc.otherSubtype)}</div>` : ''}
       ${doc.institution ? `<div>Instituição: ${escHtml(doc.institution)}</div>` : ''}
       ${doc.program ? `<div>Programa/Curso: ${escHtml(doc.program)}</div>` : ''}
+      ${doc.source ? `<div>Fonte: ${escHtml(doc.source)}</div>` : ''}
+      ${doc.context ? `<div>Contexto: ${escHtml(doc.context)}</div>` : ''}
       ${doc.responsible ? `<div>Responsável: ${escHtml(doc.responsible)}</div>` : ''}
       ${doc.fullDate ? `<div>Data: ${escHtml(doc.fullDate)}</div>` : ''}
       ${doc.area ? `<div>Área/Disciplina: ${escHtml(doc.area)}</div>` : ''}
@@ -2972,6 +3042,7 @@ const UI = {
       ${doc.coadvisor ? `<div>Coorientador: ${escHtml(doc.coadvisor)}</div>` : ''}
       ${doc.methodology ? `<div>Metodologia: ${escHtml(doc.methodology)}</div>` : ''}
       ${doc.results ? `<div>Resultados: ${escHtml(doc.results)}</div>` : ''}
+      ${doc.description ? `<div>Descrição: ${escHtml(doc.description)}</div>` : ''}
       ${doc.pageCount ? `<div>Páginas: ${escHtml(doc.pageCount)}</div>` : ''}
       ${doc.pageRange ? `<div>Páginas: ${escHtml(doc.pageRange)}</div>` : ''}
       ${doc.type   ? `<div>📂 ${escHtml(doc.type)}</div>`   : ''}
@@ -3104,6 +3175,9 @@ function isBookChapterDoc(doc) {
 function isReportDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'relatorio';
 }
+function isOtherDoc(doc) {
+  return String(doc?.type || '').trim().toLowerCase() === 'outro';
+}
 function libraryCardMeta(doc) {
   if (isReportDoc(doc)) {
     return [
@@ -3111,6 +3185,14 @@ function libraryCardMeta(doc) {
       doc.fullDate || null,
       doc.reportSubtype || null,
       doc.area || null,
+    ].filter(Boolean).join(' · ');
+  }
+  if (isOtherDoc(doc)) {
+    return [
+      doc.context || null,
+      doc.otherSubtype || null,
+      doc.source || null,
+      doc.fullDate || null,
     ].filter(Boolean).join(' · ');
   }
   return `${doc.author || '—'}${doc.year ? ' · ' + doc.year : ''}`;

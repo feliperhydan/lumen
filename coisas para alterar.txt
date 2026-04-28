@@ -1,0 +1,33 @@
+Coisas ainda a colocar no projeto Lumen:
+
+PARTE 1: Formatação de Layout
+
+✓✓✓ Tamanho dos anexos na aba de projetos
+✓✓✓ Titulo do artigo e DOI automaticamente no documento do PDF**
+Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
+Zoom in e Zoom out manter o PDF na mesma página
+Visualizador de páginas separadinhas
+Sistema de pastas e subpastas
+Retirar parte de "Documentos"
+Sistema de abas**
+Mudar nome lumen -> bibliotheca
+Check-Workflow - Limpar excessos e funcionamento workflow
+
+PARTE 2: Complemento de ferramentas
+
+Colocar feature atrelada a traduções (camada de texto por página ou selecionável e tamanho flexível)
+API do DOI
+Aplicação de Referencias
+Marcado tipo post-it para livros e PDFs grandes, com um titulo -> serve como atalho - SUMÁRIO PERSONALIZADO - Ele redireciona tambem no suco. Pode ficar como algo com um Título e como os contéudos são em ordem fica para organizar tambem o proprio SUCO.
+Tags funcionando decentemente
+Sistema de Busca Global - Etiquetas e filtros
+Criar nova categoria de Anexo? Isto tem que ser explicado a IA, Livro -> Artigo
+Check-Workflow - Limpar excessos e funcionamento workflow
+
+
+PARTE 3: Editor de texto 
+
+Tip tap, ferramentas de texto
+Organização em páginas
+Download de projetos e suco como arquivos PDF
+Check-Workflow - Limpar excessos e funcionamento workflow

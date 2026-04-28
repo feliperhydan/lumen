@@ -30,6 +30,11 @@ const FILE_UPLOAD_TYPES = [
     hint: 'Mantém o fluxo normal de importação com tipo de livro.',
   },
   {
+    value: 'trabalho-academico',
+    label: 'Trabalho Acadêmico',
+    hint: 'Prepara metadados próprios para tese, dissertação e TCC.',
+  },
+  {
     value: 'outro',
     label: 'Outros',
     hint: 'Importa o PDF sem tentativa automática de extrair DOI.',
@@ -1791,6 +1796,8 @@ const Library = {
     const d = S.docs.find(x => x.id === id);
     if (!d) return;
     const isArticle = isArticleDoc(d);
+    const isBook = isBookDoc(d);
+    const isAcademicWork = isAcademicWorkDoc(d);
     const tagsHtml = (d.tags || []).map(t =>
       `<span class="tag-pill">${escHtml(t)}<button onclick="Library._removeTagInModal('${escHtml(t)}')">×</button></span>`
     ).join('');
@@ -1816,7 +1823,31 @@ const Library = {
       <div class="fg"><label>Pasta</label>
         <select id="em-folder">${Folders.optionTags('library', d.folderId || 'root', true)}</select>
       </div>
-      <div class="fg"><label>DOI</label><input id="em-doi" placeholder="10.xxxx/xxxx" value="${escHtml(d.doi||'')}"></div>
+      <div class="fg" id="em-doi-wrap" style="${isBook ? 'display:none;' : ''}"><label>DOI</label><input id="em-doi" placeholder="10.xxxx/xxxx" value="${escHtml(d.doi||'')}"></div>
+      <div class="fg" id="em-isbn-wrap" style="${isBook ? '' : 'display:none;'}"><label>ISBN</label><input id="em-isbn" placeholder="978-xx-xxxx-xxxx-x" value="${escHtml(d.isbn||'')}"></div>
+      <div id="em-book-fields" style="${isBook ? '' : 'display:none;'}">
+        <div class="fg"><label>Editora</label><input id="em-publisher" value="${escHtml(d.publisher||'')}"></div>
+        <div class="fg-row">
+          <div class="fg"><label>Edição</label><input id="em-edition" value="${escHtml(d.edition||'')}"></div>
+          <div class="fg" style="max-width:140px;"><label>Número de páginas</label><input id="em-page-count" inputmode="numeric" value="${escHtml(d.pageCount||'')}"></div>
+        </div>
+      </div>
+      <div id="em-academic-fields" style="${isAcademicWork ? '' : 'display:none;'}">
+        <div class="fg"><label>Subtipo</label>
+          <select id="em-academic-subtype">
+            ${['Tese','Dissertação','TCC'].map(option =>
+              `<option value="${option}" ${String(d.academicSubtype||'').trim()===option?'selected':''}>${option}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="fg"><label>Instituição</label><input id="em-institution" value="${escHtml(d.institution||'')}"></div>
+        <div class="fg"><label>Programa/Curso</label><input id="em-program" value="${escHtml(d.program||'')}"></div>
+        <div class="fg-row">
+          <div class="fg"><label>Orientador</label><input id="em-advisor" value="${escHtml(d.advisor||'')}"></div>
+          <div class="fg"><label>Coorientador</label><input id="em-coadvisor" value="${escHtml(d.coadvisor||'')}"></div>
+        </div>
+        <div class="fg" style="max-width:160px;"><label>Número de páginas</label><input id="em-academic-page-count" inputmode="numeric" value="${escHtml(d.pageCount||'')}"></div>
+      </div>
       ${isArticle ? `
         <div class="meta-doi-tools">
           <button class="btn btn-sm" id="em-sync-title-btn" onclick="Library.syncTitleFromDoi('${id}')">Atualizar dados pelo DOI</button>
@@ -1836,6 +1867,18 @@ const Library = {
         <button class="btn btn-p" onclick="Library.saveMeta('${id}')">Salvar</button>
       </div>
     `);
+    const typeSelect = document.getElementById('em-type');
+    if (typeSelect && !typeSelect.querySelector('option[value="trabalho-academico"]')) {
+      const opt = document.createElement('option');
+      opt.value = 'trabalho-academico';
+      opt.textContent = 'Trabalho Acadêmico';
+      typeSelect.insertBefore(opt, typeSelect.querySelector('option[value="outro"]'));
+    }
+    if (typeSelect && String(d.type || '').trim().toLowerCase() === 'trabalho-academico') {
+      typeSelect.value = 'trabalho-academico';
+    }
+    document.getElementById('em-type')?.addEventListener('change', () => this.updateMetaTypeFields());
+    this.updateMetaTypeFields();
     Library._modalTags = [...(d.tags || [])];
   },
 
@@ -1862,6 +1905,25 @@ const Library = {
     document.getElementById('em-tags-wrap').querySelectorAll('.tag-pill').forEach(p => {
       if (p.textContent.replace('×', '').trim() === tag) p.remove();
     });
+  },
+
+  updateMetaTypeFields() {
+    const type = String(document.getElementById('em-type')?.value || '').trim().toLowerCase();
+    const isArticle = type === 'artigo';
+    const isBook = type === 'livro';
+    const isAcademicWork = type === 'trabalho-academico';
+
+    const doiWrap = document.getElementById('em-doi-wrap');
+    const isbnWrap = document.getElementById('em-isbn-wrap');
+    const bookFields = document.getElementById('em-book-fields');
+    const academicFields = document.getElementById('em-academic-fields');
+    const doiTools = document.querySelector('.meta-doi-tools');
+
+    if (doiWrap) doiWrap.style.display = (isBook || isAcademicWork) ? 'none' : '';
+    if (isbnWrap) isbnWrap.style.display = isBook ? '' : 'none';
+    if (bookFields) bookFields.style.display = isBook ? '' : 'none';
+    if (academicFields) academicFields.style.display = isAcademicWork ? '' : 'none';
+    if (doiTools) doiTools.style.display = isArticle ? '' : 'none';
   },
 
   async syncTitleFromDoi(id) {
@@ -1914,7 +1976,40 @@ const Library = {
     d.lang   = document.getElementById('em-lang').value.trim();
     d.folderId = (document.getElementById('em-folder').value || 'root');
     if (d.folderId === 'root') d.folderId = null;
-    d.doi    = document.getElementById('em-doi').value.trim();
+    if (String(d.type || '').trim().toLowerCase() === 'livro') {
+      d.doi       = '';
+      d.isbn      = document.getElementById('em-isbn')?.value.trim() || '';
+      d.publisher = document.getElementById('em-publisher')?.value.trim() || '';
+      d.edition   = document.getElementById('em-edition')?.value.trim() || '';
+      d.pageCount = document.getElementById('em-page-count')?.value.trim() || '';
+      d.academicSubtype = '';
+      d.institution = '';
+      d.program = '';
+      d.advisor = '';
+      d.coadvisor = '';
+    } else if (String(d.type || '').trim().toLowerCase() === 'trabalho-academico') {
+      d.doi       = '';
+      d.isbn      = '';
+      d.publisher = '';
+      d.edition   = '';
+      d.pageCount = document.getElementById('em-academic-page-count')?.value.trim() || '';
+      d.academicSubtype = document.getElementById('em-academic-subtype')?.value.trim() || 'Tese';
+      d.institution = document.getElementById('em-institution')?.value.trim() || '';
+      d.program = document.getElementById('em-program')?.value.trim() || '';
+      d.advisor = document.getElementById('em-advisor')?.value.trim() || '';
+      d.coadvisor = document.getElementById('em-coadvisor')?.value.trim() || '';
+    } else {
+      d.doi       = document.getElementById('em-doi')?.value.trim() || '';
+      d.isbn      = '';
+      d.publisher = '';
+      d.edition   = '';
+      d.pageCount = '';
+      d.academicSubtype = '';
+      d.institution = '';
+      d.program = '';
+      d.advisor = '';
+      d.coadvisor = '';
+    }
     d.tags   = [...this._modalTags];
     await DB.pdfs.save(d);
     Modal.hide(); this.renderGrid(); this.renderSidebar();
@@ -2674,7 +2769,7 @@ const UI = {
         const docPayload = {
           id, name: file.name.replace(/\.pdf$/i, ''),
           title: file.name.replace(/\.pdf$/i, ''),
-          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, tags: [],
+          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, isbn: '', publisher: '', edition: '', pageCount: '', academicSubtype: '', institution: '', program: '', advisor: '', coadvisor: '', tags: [],
           folderId: currentFolderId,
           addedAt: Date.now(), size: file.size,
         };
@@ -2723,6 +2818,15 @@ const UI = {
       ${doc.author ? `<div>✍ ${escHtml(doc.author)}</div>` : ''}
       ${doc.year   ? `<div>📅 ${escHtml(doc.year)}</div>`   : ''}
       ${doc.doi    ? `<div style="word-break:break-all;">DOI: ${escHtml(doc.doi)}</div>` : ''}
+      ${doc.isbn   ? `<div style="word-break:break-all;">ISBN: ${escHtml(doc.isbn)}</div>` : ''}
+      ${doc.publisher ? `<div>Editora: ${escHtml(doc.publisher)}</div>` : ''}
+      ${doc.edition ? `<div>Edição: ${escHtml(doc.edition)}</div>` : ''}
+      ${doc.academicSubtype ? `<div>Subtipo: ${escHtml(doc.academicSubtype)}</div>` : ''}
+      ${doc.institution ? `<div>Instituição: ${escHtml(doc.institution)}</div>` : ''}
+      ${doc.program ? `<div>Programa/Curso: ${escHtml(doc.program)}</div>` : ''}
+      ${doc.advisor ? `<div>Orientador: ${escHtml(doc.advisor)}</div>` : ''}
+      ${doc.coadvisor ? `<div>Coorientador: ${escHtml(doc.coadvisor)}</div>` : ''}
+      ${doc.pageCount ? `<div>Páginas: ${escHtml(doc.pageCount)}</div>` : ''}
       ${doc.type   ? `<div>📂 ${escHtml(doc.type)}</div>`   : ''}
       ${doc.lang   ? `<div>🌐 ${escHtml(doc.lang)}</div>`   : ''}
       ${doc.tags?.length ? `<div style="margin-top:5px;">${doc.tags.map(t=>`<span class="doc-tag">${escHtml(t)}</span>`).join(' ')}</div>` : ''}
@@ -2840,6 +2944,12 @@ function formatBytes(bytes) {
 }
 function isArticleDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'artigo';
+}
+function isBookDoc(doc) {
+  return String(doc?.type || '').trim().toLowerCase() === 'livro';
+}
+function isAcademicWorkDoc(doc) {
+  return String(doc?.type || '').trim().toLowerCase() === 'trabalho-academico';
 }
 function cleanDoi(raw) {
   return String(raw || '')

@@ -15,6 +15,7 @@ Check-Workflow - Limpar excessos e funcionamento workflow
 
 PARTE 2: Complemento de ferramentas
 
+Ordenar por (ano de publicação, ordem alfabetica)
 Colocar feature atrelada a traduções (camada de texto por página ou selecionável e tamanho flexível)
 ✓✓✓ API do DOI
 Aplicação de Referencias ABNT e Vancouver

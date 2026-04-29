@@ -200,7 +200,7 @@ body{font-family:var(--font-ui);background:var(--bg);color:var(--text);height:10
 .doc-title{font-size:13px;font-weight:500;line-height:1.4;margin-bottom:2px;}
 .doc-author{font-size:11px;color:var(--text3);}
 .doc-tags{margin-top:7px;display:flex;flex-wrap:wrap;gap:3px;}
-.doc-tag{font-size:10px;padding:2px 6px;border-radius:8px;background:var(--bg2);color:var(--text3);}
+.doc-tag{font-size:10px;padding:2px 6px;border-radius:8px;background:rgba(42,92,138,.15);color:var(--accent);border-color:rgba(42,92,138,.3);}
 .doc-edit{position:absolute;top:8px;right:8px;background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;padding:3px 6px;border-radius:4px;opacity:0;}
 .doc-card:hover .doc-edit{opacity:1;}
 .empty{text-align:center;padding:60px 40px;color:var(--text3);}

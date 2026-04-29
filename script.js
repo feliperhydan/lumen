@@ -30,8 +30,8 @@ const FILE_UPLOAD_TYPES = [
     hint: 'Mantém o fluxo normal de importação com tipo de livro.',
   },
   {
-    value: 'trabalho-academico',
-    label: 'Trabalho Acadêmico',
+    value: 'material-academico',
+    label: 'Material Acadêmico',
     hint: 'Prepara metadados próprios para tese, dissertação e TCC.',
   },
   {
@@ -47,9 +47,40 @@ const FILE_UPLOAD_TYPES = [
   {
     value: 'outro',
     label: 'Outros',
-    hint: 'Importa o PDF sem tentativa automática de extrair DOI.',
+    hint: "Outros materiais acadêmicos como slides, TC's, estudos dirigidos etc.",
   },
 ];
+
+const THEMED_LIBRARY_ICONS = {
+  folder: {
+    light: 'assets/icons/folder-preto.png',
+    dark: 'assets/icons/folder-branco.png',
+  },
+  artigo: {
+    light: 'assets/icons/artigo-preto.png',
+    dark: 'assets/icons/artigo-branco.png',
+  },
+  'capitulo-livro': {
+    light: 'assets/icons/cap-de-livro-preto.png',
+    dark: 'assets/icons/cap-de-livro-branco.png',
+  },
+  livro: {
+    light: 'assets/icons/livro-preto.png',
+    dark: 'assets/icons/livro-branco.png',
+  },
+  'material-academico': {
+    light: 'assets/icons/material-academico-preto.png',
+    dark: 'assets/icons/material-academico-branco.png',
+  },
+  outro: {
+    light: 'assets/icons/outros-preto.png',
+    dark: 'assets/icons/outros-branco.png',
+  },
+  relatorio: {
+    light: 'assets/icons/relatorio-preto.png',
+    dark: 'assets/icons/relatorio-branco.png',
+  },
+};
 
 /* ══════════════════════════════════════
    DATABASE — REST API (Node.js)
@@ -592,7 +623,7 @@ const Folders = {
       id: d.id,
       name: d.title || d.name || 'Documento',
       folderId: d.folderId || null,
-      icon: '📄',
+      icon: docTypeIconMarkup(d),
       type: 'doc',
     }));
   },
@@ -636,7 +667,7 @@ const Folders = {
       const isActive = selectedId === folder.id;
       html += `
         <div class="folder-tree-row ${isActive ? 'active' : ''}" style="--depth:${depth}" draggable="true" onclick="Folders.setCurrent('${scope}','${folder.id}')" ondragstart="Folders.dragStart(event,'${scope}','folder','${folder.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','folder','${folder.id}')" title="${escHtml(this.path(scope, folder.id) || folder.name)}">
-          <span class="folder-tree-ico">${isActive ? '📂' : '📁'}</span>
+          <span class="folder-tree-ico">${folderIconMarkup()}</span>
           <span class="folder-tree-name">${escHtml(folder.name)}</span>
         </div>
       `;
@@ -689,7 +720,7 @@ const Folders = {
       </div>
       <div class="folder-tree" data-scope="${scope}" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
         <div class="folder-tree-row ${currentId === 'root' ? 'active' : ''}" style="--depth:0" onclick="Folders.setCurrent('${scope}','root')" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
-          <span class="folder-tree-ico">🗂</span>
+          <span class="folder-tree-ico">${folderIconMarkup()}</span>
           <span class="folder-tree-name">Raiz (${escHtml(this._scopeLabel(scope))})</span>
         </div>
         ${rootItems}
@@ -1757,7 +1788,7 @@ const Library = {
     empty.style.display = 'none';
     grid.innerHTML = docs.sort((a, b) => b.addedAt - a.addedAt).map(d =>
       `<div class="doc-card" draggable="true" onclick="Library.openById('${d.id}')" ondragstart="Folders.dragStart(event,'library','item','${d.id}')" ondragend="Folders.dragEnd(event)">
-        <div class="doc-icon">📄</div>
+        <div class="doc-icon">${docTypeIconMarkup(d, 'card')}</div>
         <div class="doc-title">${escHtml(d.title || d.name)}</div>
         <div class="doc-author">${escHtml(d.author || '—')}${d.year ? ' · ' + escHtml(d.year) : ''}</div>
         ${d.tags?.length ? `<div class="doc-tags">${d.tags.map(t => `<span class="doc-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
@@ -1831,8 +1862,12 @@ const Library = {
       <div class="fg-row">
         <div class="fg"><label>Tipo</label>
           <select id="em-type">
-            ${['artigo','livro','tese','relatório','capítulo','outro'].map(t =>
-              `<option value="${t}" ${(d.type||'').toLowerCase()===t?'selected':''}>${t}</option>`
+            ${[
+              ['artigo', 'Artigo'],
+              ['livro', 'Livro'],
+              ['outro', 'Outros'],
+            ].map(([value, label]) =>
+              `<option value="${value}" ${(d.type||'').toLowerCase()===value?'selected':''}>${label}</option>`
             ).join('')}
           </select>
         </div>
@@ -1929,10 +1964,10 @@ const Library = {
       </div>
     `);
     const typeSelect = document.getElementById('em-type');
-    if (typeSelect && !typeSelect.querySelector('option[value="trabalho-academico"]')) {
+    if (typeSelect && !typeSelect.querySelector('option[value="material-academico"]')) {
       const opt = document.createElement('option');
-      opt.value = 'trabalho-academico';
-      opt.textContent = 'Trabalho Acadêmico';
+      opt.value = 'material-academico';
+      opt.textContent = 'Material Acadêmico';
       typeSelect.insertBefore(opt, typeSelect.querySelector('option[value="outro"]'));
     }
     if (typeSelect && !typeSelect.querySelector('option[value="capitulo-livro"]')) {
@@ -1947,8 +1982,8 @@ const Library = {
       opt.textContent = 'Relatório';
       typeSelect.insertBefore(opt, typeSelect.querySelector('option[value="outro"]'));
     }
-    if (typeSelect && String(d.type || '').trim().toLowerCase() === 'trabalho-academico') {
-      typeSelect.value = 'trabalho-academico';
+    if (typeSelect && isAcademicWorkDoc(d)) {
+      typeSelect.value = 'material-academico';
     }
     if (typeSelect && String(d.type || '').trim().toLowerCase() === 'capitulo-livro') {
       typeSelect.value = 'capitulo-livro';
@@ -1990,7 +2025,7 @@ const Library = {
     const type = String(document.getElementById('em-type')?.value || '').trim().toLowerCase();
     const isArticle = type === 'artigo';
     const isBook = type === 'livro';
-    const isAcademicWork = type === 'trabalho-academico';
+    const isAcademicWork = isAcademicWorkType(type);
     const isBookChapter = type === 'capitulo-livro';
     const isReport = type === 'relatorio';
 
@@ -2068,7 +2103,7 @@ const Library = {
     d.title  = document.getElementById('em-title').value.trim()  || d.name;
     d.author = document.getElementById('em-author').value.trim();
     d.year   = document.getElementById('em-year').value.trim();
-    d.type   = document.getElementById('em-type').value;
+    d.type   = normalizeDocType(document.getElementById('em-type').value);
     d.lang   = document.getElementById('em-lang').value.trim();
     d.folderId = (document.getElementById('em-folder').value || 'root');
     if (d.folderId === 'root') d.folderId = null;
@@ -2095,7 +2130,7 @@ const Library = {
       d.source = '';
       d.context = '';
       d.description = '';
-    } else if (String(d.type || '').trim().toLowerCase() === 'trabalho-academico') {
+    } else if (isAcademicWorkDoc(d)) {
       d.doi       = '';
       d.isbn      = '';
       d.publisher = '';
@@ -3134,6 +3169,8 @@ const UI = {
 
   toggleDark(on) {
     document.body.classList.toggle('dark-mode', on);
+    Library.renderGrid();
+    Folders.renderToolbar('library');
     DB.settings.patch({darkMode: on}).catch(err => {
       console.warn('Falha ao salvar tema no servidor.', err);
       toast('Não foi possível salvar o tema no servidor.', 2800);
@@ -3160,6 +3197,42 @@ function formatBytes(bytes) {
   const value = num / (1024 ** exp);
   return `${value >= 10 || exp === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[exp]}`;
 }
+function isDarkTheme() {
+  return document.body.classList.contains('dark-mode');
+}
+function normalizeDocType(rawType) {
+  const type = String(rawType || '').trim().toLowerCase();
+  if (type === 'trabalho-academico') return 'material-academico';
+  return type || 'outro';
+}
+function isAcademicWorkType(type) {
+  return normalizeDocType(type) === 'material-academico';
+}
+function themedLibraryIconPath(kind) {
+  const normalized = kind === 'folder' ? 'folder' : normalizeDocType(kind);
+  const theme = isDarkTheme() ? 'dark' : 'light';
+  return THEMED_LIBRARY_ICONS[normalized]?.[theme] || THEMED_LIBRARY_ICONS.outro[theme];
+}
+function iconImgMarkup(src, alt, variant = 'tree') {
+  return `<img class="ui-icon ui-icon-${variant}" src="${src}" alt="${escHtml(alt)}">`;
+}
+function folderIconMarkup() {
+  return iconImgMarkup(themedLibraryIconPath('folder'), 'Pasta', 'tree');
+}
+function docTypeIconMarkup(doc, variant = 'tree') {
+  const normalizedType = normalizeDocType(doc?.type);
+  return iconImgMarkup(themedLibraryIconPath(normalizedType), docTypeLabel(normalizedType), variant);
+}
+function docTypeLabel(type) {
+  switch (normalizeDocType(type)) {
+    case 'artigo': return 'Artigo';
+    case 'capitulo-livro': return 'Capítulo de livro';
+    case 'livro': return 'Livro';
+    case 'material-academico': return 'Material acadêmico';
+    case 'relatorio': return 'Relatório';
+    default: return 'Outro material';
+  }
+}
 function isArticleDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'artigo';
 }
@@ -3167,7 +3240,7 @@ function isBookDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'livro';
 }
 function isAcademicWorkDoc(doc) {
-  return String(doc?.type || '').trim().toLowerCase() === 'trabalho-academico';
+  return isAcademicWorkType(doc?.type);
 }
 function isBookChapterDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'capitulo-livro';

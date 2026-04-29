@@ -21,7 +21,7 @@ PARTE 2: Complemento de ferramentas
 Ordenar por (ano de publicação, ordem alfabetica)
 Colocar feature atrelada a traduções (camada de texto por página ou selecionável e tamanho flexível)
 ✓✓✓ API do DOI
-Aplicação de Referencias ABNT e Vancouver
+✓✓✓ Aplicação de Referencias ABNT e Vancouver
 Marcado tipo post-it para livros e PDFs grandes, com um titulo -> serve como atalho - SUMÁRIO PERSONALIZADO - Ele redireciona tambem no suco. Pode ficar como algo com um Título e como os contéudos são em ordem fica para organizar tambem o proprio SUCO.
 Tags funcionando decentemente
 Sistema de Busca Global - Etiquetas e filtros

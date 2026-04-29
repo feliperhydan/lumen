@@ -1120,18 +1120,137 @@ const PV = {
     }
   },
 
-  async open(doc) {
+  _captureViewState() {
+    const scroller = document.getElementById('pdf-scroller');
+    if (!scroller || !S.totalPages) {
+      return { page: Math.max(1, S.currentPage || 1), centerRatio: 0.5 };
+    }
+
+    const mid = scroller.scrollTop + (scroller.clientHeight / 2);
+    let page = Math.max(1, S.currentPage || 1);
+    let wrap = null;
+
+    for (let i = 1; i <= S.totalPages; i++) {
+      const candidate = document.getElementById(`pw-${i}`);
+      if (!candidate) continue;
+      if (mid >= candidate.offsetTop && mid <= candidate.offsetTop + candidate.offsetHeight) {
+        page = i;
+        wrap = candidate;
+        break;
+      }
+    }
+
+    if (!wrap) wrap = document.getElementById(`pw-${page}`);
+    if (!wrap) {
+      return { page, centerRatio: 0.5 };
+    }
+
+    const centerRatio = wrap.offsetHeight > 0
+      ? (mid - wrap.offsetTop) / wrap.offsetHeight
+      : 0.5;
+
+    return {
+      page,
+      centerRatio: Math.max(0, Math.min(1, centerRatio)),
+    };
+  },
+
+  _restoreViewState(viewState) {
+    const scroller = document.getElementById('pdf-scroller');
+    if (!scroller || !viewState?.page) return;
+
+    const wrap = document.getElementById(`pw-${viewState.page}`);
+    if (!wrap) return;
+
+    const ratio = Number.isFinite(viewState.centerRatio) ? viewState.centerRatio : 0.5;
+    const targetMid = wrap.offsetTop + (wrap.offsetHeight * Math.max(0, Math.min(1, ratio)));
+    const nextScrollTop = Math.max(0, targetMid - (scroller.clientHeight / 2));
+
+    scroller.scrollTop = nextScrollTop;
+    S.currentPage = viewState.page;
+    document.getElementById('pg-in').value = viewState.page;
+  },
+
+  _buildZoomPlaceholders(nextScale, previousScale) {
+    if (!S.totalPages || !previousScale || previousScale <= 0) return null;
+
+    const ratio = nextScale / previousScale;
+    const pages = [];
+
+    for (let pageNum = 1; pageNum <= S.totalPages; pageNum += 1) {
+      const wrap = document.getElementById(`pw-${pageNum}`);
+      if (!wrap) return null;
+
+      const width = wrap.clientWidth || parseFloat(wrap.style.width) || 0;
+      const height = wrap.clientHeight || parseFloat(wrap.style.height) || 0;
+      if (!width || !height) return null;
+
+      pages.push({
+        pageNum,
+        width: width * ratio,
+        height: height * ratio,
+      });
+    }
+
+    return { pages };
+  },
+
+  _applyPlaceholders(container, placeholderLayout) {
+    if (!container || !placeholderLayout?.pages?.length) return false;
+
+    container.innerHTML = '';
+    placeholderLayout.pages.forEach(({ pageNum, width, height }) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'page-wrap page-wrap-placeholder';
+      wrap.id = `pw-${pageNum}`;
+      wrap.style.width = `${width}px`;
+      wrap.style.height = `${height}px`;
+      container.appendChild(wrap);
+    });
+
+    return true;
+  },
+
+  _renderSequence(totalPages, preferredPage = 1) {
+    const total = Math.max(0, Number(totalPages) || 0);
+    if (!total) return [];
+
+    const target = Math.max(1, Math.min(total, Number(preferredPage) || 1));
+    const order = [target];
+
+    for (let offset = 1; order.length < total; offset += 1) {
+      const next = target + offset;
+      const prev = target - offset;
+
+      if (next <= total) order.push(next);
+      if (prev >= 1 && order.length < total) order.push(prev);
+    }
+
+    return order;
+  },
+
+  async open(doc, options = {}) {
+    const preserveView = Boolean(options?.preserveView);
+    const viewState = preserveView ? (options?.viewState || this._captureViewState()) : null;
+    const placeholderLayout = preserveView ? options?.placeholderLayout : null;
     S.currentDoc = doc;
-    S.currentPage = 1;
+    S.currentPage = preserveView ? Math.max(1, viewState?.page || S.currentPage || 1) : 1;
     S.highlights = await DB.highlights.byPDF(doc.id);
     this._citationBusy = false;
     this.updateReaderActions(doc);
 
     const scroller = document.getElementById('pdf-scroller');
-    scroller.innerHTML = '<div class="loading"><div class="spin"></div>Carregando PDF…</div>';
+    const reusedPlaceholders = this._applyPlaceholders(scroller, placeholderLayout);
+    if (!reusedPlaceholders) {
+      scroller.innerHTML = '<div class="loading"><div class="spin"></div>Carregando PDF…</div>';
+    }
 
     // Invalida renders em andamento
     const token = ++this._renderToken;
+
+    if (preserveView && viewState && reusedPlaceholders) {
+      this._restoreViewState(viewState);
+    }
 
     try {
       const arr = await DB.pdfs.getBinary(doc.id);
@@ -1140,16 +1259,24 @@ const PV = {
 
       document.getElementById('pg-total').textContent  = S.totalPages;
       document.getElementById('pg-in').max             = S.totalPages;
-      document.getElementById('pg-in').value           = 1;
+      document.getElementById('pg-in').value           = S.currentPage;
       document.getElementById('zoom-lbl').textContent  = Math.round(S.scale * 100) + '%';
       document.getElementById('pdf-bar').style.display = 'flex';
       document.getElementById('reader-doc-name').textContent = doc.title || doc.name;
 
-      scroller.innerHTML = '';
+      if (!reusedPlaceholders) scroller.innerHTML = '';
 
-      for (let i = 1; i <= S.totalPages; i++) {
+      const renderOrder = preserveView
+        ? this._renderSequence(S.totalPages, viewState?.page || S.currentPage)
+        : this._renderSequence(S.totalPages, 1);
+
+      for (const i of renderOrder) {
         if (token !== this._renderToken) break; // abortado
         await this._renderPage(i, scroller, token);
+      }
+
+      if (token === this._renderToken && preserveView && viewState) {
+        requestAnimationFrame(() => this._restoreViewState(viewState));
       }
     } catch(err) {
       console.error(err);
@@ -1172,11 +1299,17 @@ const PV = {
     const cssH  = vp.height;
 
     // ── 2. Container da página ──
-    const wrap = document.createElement('div');
+    let wrap = document.getElementById(`pw-${pageNum}`);
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = `pw-${pageNum}`;
+      container.appendChild(wrap);
+    }
+
     wrap.className = 'page-wrap';
-    wrap.id = `pw-${pageNum}`;
     wrap.style.width  = cssW + 'px';
     wrap.style.height = cssH + 'px';
+    wrap.replaceChildren();
 
     // ── 3. Canvas de alta resolução ──
     const canvas = document.createElement('canvas');
@@ -1203,7 +1336,6 @@ const PV = {
     wrap.appendChild(canvas);
     wrap.appendChild(hDiv);
     wrap.appendChild(tDiv);
-    container.appendChild(wrap);
 
     // ── 6. Renderizar canvas com viewport escalado por DPR ──
     const renderVP = page.getViewport({scale: S.scale * dpr});
@@ -1345,11 +1477,27 @@ const PV = {
     document.getElementById('pg-in').value = n;
     document.getElementById(`pw-${n}`)?.scrollIntoView({behavior: 'smooth', block: 'start'});
   },
-  zoomIn()  { S.scale = Math.min(3, S.scale + 0.25); this._reopen(); },
-  zoomOut() { S.scale = Math.max(0.5, S.scale - 0.25); this._reopen(); },
-  _reopen() {
+  zoomIn() {
+    const previousScale = S.scale;
+    const nextScale = Math.min(3, S.scale + 0.25);
+    if (nextScale === previousScale) return;
+    S.scale = nextScale;
+    this._reopen(previousScale);
+  },
+  zoomOut() {
+    const previousScale = S.scale;
+    const nextScale = Math.max(0.5, S.scale - 0.25);
+    if (nextScale === previousScale) return;
+    S.scale = nextScale;
+    this._reopen(previousScale);
+  },
+  _reopen(previousScale = S.scale) {
     document.getElementById('zoom-lbl').textContent = Math.round(S.scale * 100) + '%';
-    if (S.currentDoc) this.open(S.currentDoc);
+    if (!S.currentDoc) return;
+
+    const viewState = this._captureViewState();
+    const placeholderLayout = this._buildZoomPlaceholders(S.scale, previousScale);
+    this.open(S.currentDoc, { preserveView: true, viewState, placeholderLayout });
   },
 };
 

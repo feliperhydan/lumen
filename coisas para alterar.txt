@@ -13,7 +13,8 @@ Sistema de abas**
 Mudar nome lumen -> bibliotheca
 Check-Workflow - Limpar excessos e funcionamento workflow
 Colocar indices nos icones de trabalhos academicos e capitulos de livro
-Colocar o tipo do arquivo nos icones dos arquivos (ex: artigo, livro, capitlo de livro etc)
+✓✓✓Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
+✓✓✓Colocar o tipo do arquivo nos icones dos arquivos (ex: artigo, livro, capitlo de livro etc)
 
 PARTE 2: Complemento de ferramentas
 

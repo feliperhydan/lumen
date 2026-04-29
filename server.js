@@ -44,6 +44,25 @@ function normalizeString(value, fallback = '') {
   return typeof value === 'string' ? value : fallback;
 }
 
+function normalizeCitationCache(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+
+  const next = {};
+  Object.entries(input).forEach(([style, value]) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    const normalizedStyle = normalizeString(style).trim().toLowerCase();
+    if (!normalizedStyle) return;
+
+    const citation = normalizeString(value.citation).trim();
+    const cachedAt = Number(value.cachedAt) || 0;
+    if (!citation) return;
+
+    next[normalizedStyle] = { citation, cachedAt };
+  });
+
+  return next;
+}
+
 function normalizeDoc(input = {}, fallbackName = 'Documento') {
   const tags = Array.isArray(input.tags)
     ? input.tags.filter((x) => typeof x === 'string' && x.trim())
@@ -82,6 +101,7 @@ function normalizeDoc(input = {}, fallbackName = 'Documento') {
     source: normalizeString(input.source).trim(),
     context: normalizeString(input.context).trim(),
     description: normalizeString(input.description).trim(),
+    citationCache: normalizeCitationCache(input.citationCache),
     citationApa: normalizeString(input.citationApa).trim(),
     citationCachedAt: Number(input.citationCachedAt) || 0,
     folderId: normalizeString(input.folderId).trim() || null,
@@ -196,9 +216,32 @@ async function resolveCurlExecutable() {
   return curlExecutablePromise;
 }
 
+function normalizeCitationStyle(style, fallback = 'apa') {
+  const normalized = normalizeString(style, fallback).trim().toLowerCase();
+  return ['abnt', 'vancouver', 'apa'].includes(normalized) ? normalized : fallback;
+}
+
+function citationHeaderStyle(style = 'apa') {
+  const normalizedStyle = normalizeCitationStyle(style);
+  if (normalizedStyle === 'abnt') {
+    return 'universidade-do-estado-do-rio-de-janeiro-abnt';
+  }
+  if (normalizedStyle === 'vancouver') {
+    return 'elsevier-vancouver';
+  }
+  return 'apa';
+}
+
+function citationAcceptHeader(style = 'apa') {
+  const normalizedStyle = normalizeCitationStyle(style);
+  const headerStyle = citationHeaderStyle(normalizedStyle);
+  const localePart = normalizedStyle === 'abnt' ? '; locale=pt-BR' : '';
+  return `Accept: text/bibliography; style=${headerStyle}${localePart}`;
+}
+
 function citationUrlForDoi(doi) {
   const normalizedDoi = normalizeString(doi).trim();
-  return `https://citation.doi.org/format?doi=${normalizedDoi}&style=apa&lang=en-US`;
+  return `https://doi.org/${encodeURIComponent(normalizedDoi)}`;
 }
 
 function crossrefUrlForDoi(doi) {
@@ -206,15 +249,16 @@ function crossrefUrlForDoi(doi) {
   return `https://api.crossref.org/works/${encodeURIComponent(normalizedDoi)}`;
 }
 
-async function fetchCitationByCurl(doi) {
+async function fetchCitationByCurl(doi, style = 'apa') {
   const normalizedDoi = normalizeString(doi).trim();
   if (!normalizedDoi) {
     throw new Error('DOI obrigatorio.');
   }
 
   const url = citationUrlForDoi(normalizedDoi);
+  const acceptHeader = citationAcceptHeader(style);
   const curlExecutable = await resolveCurlExecutable();
-  const { stdout } = await execFileAsync(curlExecutable, [url], {
+  const { stdout } = await execFileAsync(curlExecutable, ['-L', '-H', acceptHeader, url], {
     maxBuffer: 1024 * 1024,
     windowsHide: true,
   });
@@ -225,12 +269,12 @@ async function fetchCitationByCurl(doi) {
   return citation;
 }
 
-async function fetchCitationByDoi(doi) {
+async function fetchCitationByDoi(doi, style = 'apa') {
   const normalizedDoi = normalizeString(doi).trim();
   if (!normalizedDoi) {
     throw new Error('DOI obrigatorio.');
   }
-  return fetchCitationByCurl(normalizedDoi);
+  return fetchCitationByCurl(normalizedDoi, style);
 }
 
 async function fetchJsonByCurl(url) {
@@ -390,7 +434,7 @@ app.get('/api/pdfs/:id/file', async (req, res, next) => {
   }
 });
 
-app.get('/api/pdfs/:id/citation', async (req, res, next) => {
+async function handlePdfCitation(req, res, next) {
   try {
     const doc = byId(db.pdfs, req.params.id);
     if (!doc) {
@@ -409,22 +453,45 @@ app.get('/api/pdfs/:id/citation', async (req, res, next) => {
       return;
     }
 
-    const wantsRefresh = String(req.query.refresh || '').trim() === '1';
-    if (!wantsRefresh && normalizeString(doc.citationApa).trim()) {
+    const styleSource = req.method === 'POST' ? req.body?.style : req.query.style;
+    const refreshSource = req.method === 'POST' ? req.body?.refresh : req.query.refresh;
+    const style = normalizeCitationStyle(styleSource, 'abnt');
+    const wantsRefresh = refreshSource === true || String(refreshSource || '').trim() === '1';
+    const cache = normalizeCitationCache(doc.citationCache);
+    const cachedEntry = cache[style]
+      || (style === 'apa' && normalizeString(doc.citationApa).trim()
+        ? {
+            citation: normalizeString(doc.citationApa).trim(),
+            cachedAt: Number(doc.citationCachedAt) || 0,
+          }
+        : null);
+
+    if (!wantsRefresh && cachedEntry?.citation) {
       res.json({
-        citation: doc.citationApa,
+        citation: cachedEntry.citation,
         doi,
+        style,
         cached: true,
-        cachedAt: Number(doc.citationCachedAt) || 0,
+        cachedAt: Number(cachedEntry.cachedAt) || 0,
       });
       return;
     }
 
-    const citation = await fetchCitationByDoi(doi);
+    const citation = await fetchCitationByDoi(doi, style);
+    const updatedCache = {
+      ...cache,
+      [style]: {
+        citation,
+        cachedAt: Date.now(),
+      },
+    };
     const updated = {
       ...doc,
-      citationApa: citation,
-      citationCachedAt: Date.now(),
+      citationCache: updatedCache,
+      citationApa: style === 'apa' ? citation : normalizeString(doc.citationApa).trim(),
+      citationCachedAt: style === 'apa'
+        ? updatedCache[style].cachedAt
+        : Number(doc.citationCachedAt) || 0,
     };
     upsert('pdfs', updated);
     await saveDb();
@@ -432,13 +499,17 @@ app.get('/api/pdfs/:id/citation', async (req, res, next) => {
     res.json({
       citation,
       doi,
+      style,
       cached: false,
-      cachedAt: updated.citationCachedAt,
+      cachedAt: updatedCache[style].cachedAt,
     });
   } catch (err) {
     next(err);
   }
-});
+}
+
+app.get('/api/pdfs/:id/citation', handlePdfCitation);
+app.post('/api/pdfs/:id/citation', handlePdfCitation);
 
 app.post('/api/pdfs/:id/sync-doi-metadata', async (req, res, next) => {
   try {

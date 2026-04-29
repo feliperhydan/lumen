@@ -51,6 +51,11 @@ const FILE_UPLOAD_TYPES = [
   },
 ];
 
+const CITATION_STYLE_OPTIONS = [
+  { value: 'abnt', label: 'ABNT' },
+  { value: 'vancouver', label: 'Vancouver' },
+];
+
 const THEMED_LIBRARY_ICONS = {
   folder: {
     light: 'assets/icons/folder-preto.png',
@@ -134,9 +139,32 @@ const DB = (() => {
       },
       save: d => put(`/pdfs/${encodeURIComponent(d.id)}`, d),
       get: id => request(`/pdfs/${encodeURIComponent(id)}`),
-      getCitation: (id, refresh = false) => {
-        const suffix = refresh ? '?refresh=1' : '';
-        return request(`/pdfs/${encodeURIComponent(id)}/citation${suffix}`);
+      getCitation: async (id, options = {}) => {
+        const normalizedStyle = options?.style ? String(options.style).trim().toLowerCase() : '';
+        const refresh = Boolean(options?.refresh);
+
+        try {
+          return await request(`/pdfs/${encodeURIComponent(id)}/citation`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            cache: 'no-store',
+            body: JSON.stringify({
+              refresh,
+              style: normalizedStyle,
+            }),
+          });
+        } catch (err) {
+          if (!String(err?.message || '').includes('404')) throw err;
+
+          const params = new URLSearchParams();
+          if (refresh) params.set('refresh', '1');
+          if (normalizedStyle) params.set('style', normalizedStyle);
+          params.set('_ts', String(Date.now()));
+
+          return request(`/pdfs/${encodeURIComponent(id)}/citation?${params.toString()}`, {
+            cache: 'no-store',
+          });
+        }
       },
       syncDoiMetadata: id => request(`/pdfs/${encodeURIComponent(id)}/sync-doi-metadata`, {method: 'POST'}),
       getBinary: async id => {
@@ -1083,6 +1111,46 @@ const PV = {
     copyBtn.textContent = this._citationBusy ? '⏳ Buscando referência...' : '📋 Copiar Referência';
   },
 
+  promptCitationStyle() {
+    return new Promise(resolve => {
+      let settled = false;
+      const finish = value => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+
+      Modal.show(`
+        <h3>Copiar Referência</h3>
+        <p class="modal-subtle">Escolha o padrão da referência que será buscada e copiada para a área de transferência.</p>
+        <div class="mactions" style="justify-content:flex-start;">
+          ${CITATION_STYLE_OPTIONS.map(option => `
+            <button class="btn btn-p" onclick="PV.confirmCitationStyle('${option.value}')">${escHtml(option.label)}</button>
+          `).join('')}
+          <button class="btn" onclick="PV.cancelCitationStyle()">Cancelar</button>
+        </div>
+      `, {
+        onHide: () => finish(null),
+      });
+
+      this._finishCitationStylePrompt = finish;
+    });
+  },
+
+  _finishCitationStylePrompt: null,
+
+  confirmCitationStyle(style) {
+    const finish = this._finishCitationStylePrompt;
+    this._finishCitationStylePrompt = null;
+    if (finish) finish(style);
+    Modal.hide();
+  },
+
+  cancelCitationStyle() {
+    this._finishCitationStylePrompt = null;
+    Modal.hide();
+  },
+
   async copyCitation() {
     const doc = S.currentDoc;
     if (!doc) return;
@@ -1096,21 +1164,35 @@ const PV = {
       return;
     }
 
+    const selectedStyle = await this.promptCitationStyle();
+    if (!selectedStyle) return;
+
     this._citationBusy = true;
     this.updateReaderActions(doc);
 
     try {
-      const payload = await DB.pdfs.getCitation(doc.id);
+      const payload = await DB.pdfs.getCitation(doc.id, { style: selectedStyle });
       const citation = String(payload?.citation || '').trim();
       if (!citation) throw new Error('Nenhuma referência foi retornada para este DOI.');
 
-      doc.citationApa = citation;
-      doc.citationCachedAt = Number(payload?.cachedAt) || Date.now();
+      const style = String(payload?.style || selectedStyle).trim().toLowerCase();
+      doc.citationCache = {
+        ...(doc.citationCache || {}),
+        [style]: {
+          citation,
+          cachedAt: Number(payload?.cachedAt) || Date.now(),
+        },
+      };
+      if (style === 'apa') {
+        doc.citationApa = citation;
+        doc.citationCachedAt = Number(payload?.cachedAt) || Date.now();
+      }
       const ix = S.docs.findIndex(item => item.id === doc.id);
       if (ix >= 0) S.docs[ix] = doc;
 
       await navigator.clipboard.writeText(citation);
-      toast(payload?.cached ? 'Referência copiada do cache!' : 'Referência copiada!');
+      const styleLabel = citationStyleLabel(style);
+      toast(payload?.cached ? `Referência ${styleLabel} copiada do cache!` : `Referência ${styleLabel} copiada!`);
     } catch (err) {
       console.error(err);
       toast(err.message || 'Falha ao copiar referência.');
@@ -3370,6 +3452,17 @@ function folderIconMarkup() {
 function docTypeIconMarkup(doc, variant = 'tree') {
   const normalizedType = normalizeDocType(doc?.type);
   return iconImgMarkup(themedLibraryIconPath(normalizedType), docTypeLabel(normalizedType), variant);
+}
+function normalizeCitationStyle(style) {
+  const normalized = String(style || '').trim().toLowerCase();
+  return ['abnt', 'vancouver', 'apa'].includes(normalized) ? normalized : 'abnt';
+}
+function citationStyleLabel(style) {
+  switch (normalizeCitationStyle(style)) {
+    case 'vancouver': return 'Vancouver';
+    case 'apa': return 'APA';
+    default: return 'ABNT';
+  }
 }
 function docTypeLabel(type) {
   switch (normalizeDocType(type)) {

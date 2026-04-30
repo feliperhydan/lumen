@@ -2188,14 +2188,15 @@ const Library = {
     host.innerHTML = `
       <div class="lib-current-bar">
         <div class="lib-current-meta">
-          <div class="lib-breadcrumbs">${crumbHtml}</div>
           <div class="lib-current-title">${escHtml(currentLabel)}</div>
+          <div class="lib-breadcrumbs">${crumbHtml}</div>
           <div class="lib-current-sub">${stats.items} arquivo(s) e ${stats.folders} subpasta(s) neste nível.</div>
         </div>
         <div class="lib-current-actions">
           ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.goUp('library')">← Voltar</button>` : ''}
           <button class="btn btn-sm" onclick="Folders.create('library','${currentFolder?.id || 'root'}')">+ Pasta aqui</button>
           ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.rename('library','${currentFolder.id}')">Renomear pasta</button>` : ''}
+          ${currentFolder ? `<button class="btn btn-d btn-sm" onclick="Folders.removeSelected('library')">Excluir pasta</button>` : ''}
           <button class="btn btn-sm" onclick="UI.nav('search')">Abrir Explorador</button>
         </div>
       </div>

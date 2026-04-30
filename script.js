@@ -765,7 +765,6 @@ const Folders = {
       <div class="folder-toolbar-row">
         <span class="folder-toolbar-lbl">Explorador</span>
         <button class="btn btn-sm" onclick="Folders.create('${scope}')">+ Pasta</button>
-        <button class="btn btn-sm" onclick="Folders.createSub('${scope}')">+ Subpasta</button>
         <button class="btn btn-sm" onclick="Folders.renameSelected('${scope}')">Renomear</button>
         <button class="btn btn-d btn-sm" onclick="Folders.removeSelected('${scope}')">Excluir</button>
         <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
@@ -800,7 +799,6 @@ const Folders = {
         <div class="folder-toolbar-actions">
           <button class="btn btn-sm" onclick="Folders.setCurrent('library','root')">Raiz</button>
           <button class="btn btn-sm" onclick="Folders.create('library')">+ Pasta</button>
-          <button class="btn btn-sm" onclick="Folders.createSub('library')">+ Subpasta</button>
           <button class="btn btn-sm" onclick="Folders.renameSelected('library')">Renomear</button>
           <button class="btn btn-d btn-sm" onclick="Folders.removeSelected('library')">Excluir</button>
         </div>
@@ -864,16 +862,6 @@ const Folders = {
       Library.renderGrid();
     }
     this.renderToolbar(scope);
-  },
-
-  createSub(scope) {
-    const key = this._scopeKey(scope);
-    const cur = S.currentFolder[key] || 'root';
-    if (cur === 'root') {
-      toast('Selecione uma pasta para criar subpasta.');
-      return;
-    }
-    this.create(scope, cur);
   },
 
   renameSelected(scope) {
@@ -2123,7 +2111,6 @@ const Library = {
         </div>
         <div class="lib-current-actions">
           <button class="btn btn-sm" onclick="Folders.create('library','${currentFolder?.id || 'root'}')">+ Pasta aqui</button>
-          ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.createSub('library')">+ Subpasta</button>` : ''}
           ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.rename('library','${currentFolder.id}')">Renomear pasta</button>` : ''}
         </div>
       </div>
@@ -2191,16 +2178,10 @@ const Library = {
                   <div class="doc-head">
                     <div class="doc-icon">${docTypeIconMarkup(d, 'card')}</div>
                     <div class="doc-head-main">
-                      <div class="doc-kicker">
-                        <span class="doc-type-pill">${escHtml(docTypeLabel(d.type))}</span>
-                        ${d.lang ? `<span>${escHtml(String(d.lang).toUpperCase())}</span>` : ''}
-                      </div>
                       <div class="doc-title">${escHtml(d.title || d.name)}</div>
                       <div class="doc-author">${escHtml(libraryCardMeta(d) || 'Sem metadados principais')}</div>
                     </div>
                   </div>
-                  <div class="doc-path">${escHtml(folderPath)}</div>
-                  ${metaBits.length ? `<div class="doc-meta-list">${metaBits.map(bit => `<span class="doc-meta-chip">${escHtml(bit)}</span>`).join('')}</div>` : ''}
                   ${d.tags?.length ? `<div class="doc-tags">${d.tags.map(t => `<span class="doc-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
                   <button class="doc-edit" onclick="event.stopPropagation();Library.editMeta('${d.id}')">✏</button>
                 </article>

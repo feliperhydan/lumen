@@ -473,6 +473,21 @@ const Folders = {
     return names.join(' / ');
   },
 
+  breadcrumb(scope, id) {
+    const crumbs = [{id: 'root', name: this._scopeLabel(scope)}];
+    if (!id || id === 'root') return crumbs;
+
+    let cur = this.find(scope, id);
+    const stack = [];
+    let guard = 0;
+    while (cur && guard < 80) {
+      stack.unshift({id: cur.id, name: cur.name});
+      cur = cur.parentId ? this.find(scope, cur.parentId) : null;
+      guard += 1;
+    }
+    return crumbs.concat(stack);
+  },
+
   descendants(scope, id) {
     const out = [];
     const stack = [id];
@@ -668,6 +683,13 @@ const Folders = {
       .sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   },
 
+  folderStats(scope, folderId) {
+    return {
+      folders: this._folderChildren(scope, folderId).length,
+      items: this._itemsInFolder(scope, folderId).length,
+    };
+  },
+
   isVisible(scope, itemFolderId) {
     const key = this._scopeKey(scope);
     const current = S.currentFolder[key] || 'root';
@@ -693,18 +715,24 @@ const Folders = {
     const folders = this._folderChildren(scope, parentId);
     folders.forEach(folder => {
       const isActive = selectedId === folder.id;
+      const stats = this.folderStats(scope, folder.id);
       html += `
         <div class="folder-tree-row ${isActive ? 'active' : ''}" style="--depth:${depth}" draggable="true" onclick="Folders.setCurrent('${scope}','${folder.id}')" ondragstart="Folders.dragStart(event,'${scope}','folder','${folder.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','folder','${folder.id}')" title="${escHtml(this.path(scope, folder.id) || folder.name)}">
-          <span class="folder-tree-ico">${folderIconMarkup()}</span>
-          <span class="folder-tree-name">${escHtml(folder.name)}</span>
+          <div class="folder-tree-main">
+            <span class="folder-tree-ico">${folderIconMarkup()}</span>
+            <span class="folder-tree-name">${escHtml(folder.name)}</span>
+          </div>
+          <span class="folder-tree-meta">${stats.items} arq.</span>
         </div>
       `;
 
       this._itemsInFolder(scope, folder.id).forEach(item => {
         html += `
           <div class="folder-tree-item" style="--depth:${depth + 1}" draggable="true" onclick="Folders.openItem('${scope}','${item.id}')" ondragstart="Folders.dragStart(event,'${scope}','item','${item.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','folder','${folder.id}')" title="${escHtml(item.name)}">
-            <span class="folder-tree-ico">${item.icon}</span>
-            <span class="folder-tree-name">${escHtml(item.name)}</span>
+            <div class="folder-tree-main">
+              <span class="folder-tree-ico">${item.icon}</span>
+              <span class="folder-tree-name">${escHtml(item.name)}</span>
+            </div>
           </div>
         `;
       });
@@ -715,29 +743,25 @@ const Folders = {
     return html;
   },
 
-  renderToolbar(scope) {
+  _renderDefaultToolbar(scope) {
     const key = this._scopeKey(scope);
-    const hostId = scope === 'projects' ? 'proj-folder-bar' : 'lib-folder-bar';
-    const host = document.getElementById(hostId);
-    if (!host) return;
-
     const currentId = S.currentFolder[key] || 'root';
     const currentPath = currentId === 'root' ? 'Raiz' : (this.path(scope, currentId) || 'Raiz');
-
     const rootItems = this._itemsInFolder(scope, null)
       .map(item => `
         <div class="folder-tree-item" style="--depth:1" draggable="true" onclick="Folders.openItem('${scope}','${item.id}')" ondragstart="Folders.dragStart(event,'${scope}','item','${item.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')" title="${escHtml(item.name)}">
-          <span class="folder-tree-ico">${item.icon}</span>
-          <span class="folder-tree-name">${escHtml(item.name)}</span>
+          <div class="folder-tree-main">
+            <span class="folder-tree-ico">${item.icon}</span>
+            <span class="folder-tree-name">${escHtml(item.name)}</span>
+          </div>
         </div>
       `)
       .join('');
-
     const selectedName = currentId === 'root'
       ? 'Raiz'
       : (this.find(scope, currentId)?.name || 'Raiz');
 
-    host.innerHTML = `
+    return `
       <div class="folder-toolbar-row">
         <span class="folder-toolbar-lbl">Explorador</span>
         <button class="btn btn-sm" onclick="Folders.create('${scope}')">+ Pasta</button>
@@ -748,14 +772,78 @@ const Folders = {
       </div>
       <div class="folder-tree" data-scope="${scope}" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
         <div class="folder-tree-row ${currentId === 'root' ? 'active' : ''}" style="--depth:0" onclick="Folders.setCurrent('${scope}','root')" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
-          <span class="folder-tree-ico">${folderIconMarkup()}</span>
-          <span class="folder-tree-name">Raiz (${escHtml(this._scopeLabel(scope))})</span>
+          <div class="folder-tree-main">
+            <span class="folder-tree-ico">${folderIconMarkup()}</span>
+            <span class="folder-tree-name">Raiz (${escHtml(this._scopeLabel(scope))})</span>
+          </div>
         </div>
         ${rootItems}
         ${this._renderTreeBranch(scope, null, 1)}
       </div>
       <div class="folder-tree-foot">Selecionado: ${escHtml(selectedName)}</div>
     `;
+  },
+
+  _renderLibraryToolbar() {
+    const currentId = S.currentFolder.library || 'root';
+    const currentPath = currentId === 'root' ? 'Raiz' : (this.path('library', currentId) || 'Raiz');
+    const stats = this.folderStats('library', currentId === 'root' ? null : currentId);
+    const totalDocs = this.items('library').length;
+    const totalFolders = this.list('library').length;
+
+    return `
+      <div class="folder-toolbar-section">
+        <div class="folder-toolbar-row">
+          <span class="folder-toolbar-lbl">Explorador da Biblioteca</span>
+          <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
+        </div>
+        <div class="folder-toolbar-actions">
+          <button class="btn btn-sm" onclick="Folders.setCurrent('library','root')">Raiz</button>
+          <button class="btn btn-sm" onclick="Folders.create('library')">+ Pasta</button>
+          <button class="btn btn-sm" onclick="Folders.createSub('library')">+ Subpasta</button>
+          <button class="btn btn-sm" onclick="Folders.renameSelected('library')">Renomear</button>
+          <button class="btn btn-d btn-sm" onclick="Folders.removeSelected('library')">Excluir</button>
+        </div>
+      </div>
+      <div class="folder-toolbar-summary">
+        <div class="folder-summary-card">
+          <strong>${stats.items}</strong>
+          <span>arquivos aqui</span>
+        </div>
+        <div class="folder-summary-card">
+          <strong>${stats.folders}</strong>
+          <span>subpastas aqui</span>
+        </div>
+        <div class="folder-summary-card">
+          <strong>${totalDocs}</strong>
+          <span>arquivos na biblioteca</span>
+        </div>
+        <div class="folder-summary-card">
+          <strong>${totalFolders}</strong>
+          <span>pastas criadas</span>
+        </div>
+      </div>
+      <div class="folder-tree" data-scope="library" ondragover="Folders.dragOver(event,'library','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'library','root','root')">
+        <div class="folder-tree-row ${currentId === 'root' ? 'active' : ''}" style="--depth:0" onclick="Folders.setCurrent('library','root')" ondragover="Folders.dragOver(event,'library','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'library','root','root')">
+          <div class="folder-tree-main">
+            <span class="folder-tree-ico">${folderIconMarkup()}</span>
+            <span class="folder-tree-name">Biblioteca</span>
+          </div>
+          <span class="folder-tree-meta">${this._itemsInFolder('library', null).length} arq.</span>
+        </div>
+        ${this._renderTreeBranch('library', null, 1)}
+      </div>
+      <div class="folder-tree-foot">Arraste arquivos ou pastas para reorganizar.</div>
+    `;
+  },
+
+  renderToolbar(scope) {
+    const hostId = scope === 'projects' ? 'proj-folder-bar' : 'lib-folder-bar';
+    const host = document.getElementById(hostId);
+    if (!host) return;
+    host.innerHTML = scope === 'library'
+      ? this._renderLibraryToolbar()
+      : this._renderDefaultToolbar(scope);
   },
 
   openItem(scope, id) {
@@ -2000,7 +2088,10 @@ const Library = {
 
   filteredDocs() {
     let docs = S.docs;
-    docs = docs.filter(d => Folders.isVisible('library', d.folderId || null));
+    const currentFolderId = (S.currentFolder.library && S.currentFolder.library !== 'root')
+      ? S.currentFolder.library
+      : null;
+    docs = docs.filter(d => (d.folderId || null) === currentFolderId);
     if (S.libFilter.tags.length)
       docs = docs.filter(d => S.libFilter.tags.every(t => (d.tags || []).includes(t)));
     if (S.libFilter.type)
@@ -2010,26 +2101,135 @@ const Library = {
     return docs;
   },
 
+  renderCurrentFolder() {
+    const host = document.getElementById('lib-current-folder');
+    if (!host) return;
+
+    const currentId = S.currentFolder.library || 'root';
+    const currentFolder = currentId === 'root' ? null : Folders.find('library', currentId);
+    const crumbs = Folders.breadcrumb('library', currentId);
+    const stats = Folders.folderStats('library', currentFolder?.id || null);
+    const currentLabel = currentFolder?.name || 'Biblioteca';
+    const crumbHtml = crumbs.map((crumb, index) => `
+      <button class="lib-breadcrumb" onclick="Folders.setCurrent('library','${crumb.id}')">${escHtml(crumb.name)}</button>${index < crumbs.length - 1 ? '<span>/</span>' : ''}
+    `).join('');
+
+    host.innerHTML = `
+      <div class="lib-current-bar">
+        <div class="lib-current-meta">
+          <div class="lib-breadcrumbs">${crumbHtml}</div>
+          <div class="lib-current-title">${escHtml(currentLabel)}</div>
+          <div class="lib-current-sub">${stats.items} arquivo(s) e ${stats.folders} subpasta(s) neste nível.</div>
+        </div>
+        <div class="lib-current-actions">
+          <button class="btn btn-sm" onclick="Folders.create('library','${currentFolder?.id || 'root'}')">+ Pasta aqui</button>
+          ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.createSub('library')">+ Subpasta</button>` : ''}
+          ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.rename('library','${currentFolder.id}')">Renomear pasta</button>` : ''}
+        </div>
+      </div>
+    `;
+  },
+
   renderGrid() {
-    const docs  = this.filteredDocs();
-    const grid  = document.getElementById('doc-grid');
+    this.renderCurrentFolder();
+
+    const docs = this.filteredDocs().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    const currentFolderId = (S.currentFolder.library && S.currentFolder.library !== 'root')
+      ? S.currentFolder.library
+      : null;
+    const childFolders = Folders._folderChildren('library', currentFolderId);
+    const grid = document.getElementById('doc-grid');
     const empty = document.getElementById('lib-empty');
-    if (!docs.length) { grid.innerHTML = ''; empty.style.display = 'block'; return; }
+
+    const sections = [];
+
+    if (childFolders.length) {
+      sections.push(`
+        <section class="lib-section">
+          <div class="lib-section-head">
+            <div class="lib-section-title">Pastas</div>
+            <div class="lib-section-note">${childFolders.length} pasta(s) neste nível</div>
+          </div>
+          <div class="folder-spot-grid">
+            ${childFolders.map(folder => {
+              const stats = Folders.folderStats('library', folder.id);
+              const folderPath = Folders.path('library', folder.id) || folder.name;
+              return `
+                <article class="folder-spot" draggable="true" onclick="Folders.setCurrent('library','${folder.id}')" ondragstart="Folders.dragStart(event,'library','folder','${folder.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'library','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'library','folder','${folder.id}')" title="${escHtml(folderPath)}">
+                  <div class="folder-spot-head">
+                    <span class="folder-spot-ico">${folderIconMarkup('folder-spot')}</span>
+                    <div style="min-width:0;">
+                      <div class="folder-spot-name">${escHtml(folder.name)}</div>
+                      <div class="folder-spot-path">${escHtml(folderPath)}</div>
+                    </div>
+                  </div>
+                  <div class="folder-spot-stats">
+                    <span class="folder-spot-chip">${stats.items} arquivo(s)</span>
+                    <span class="folder-spot-chip">${stats.folders} subpasta(s)</span>
+                  </div>
+                </article>
+              `;
+            }).join('')}
+          </div>
+        </section>
+      `);
+    }
+
+    if (docs.length) {
+      sections.push(`
+        <section class="lib-section">
+          <div class="lib-section-head">
+            <div class="lib-section-title">Arquivos</div>
+            <div class="lib-section-note">${docs.length} arquivo(s) visível(is)</div>
+          </div>
+          <div class="doc-grid">
+            ${docs.map(d => {
+              const metaBits = libraryCardMetaParts(d);
+              const folderPath = Folders.path('library', d.folderId) || 'Raiz';
+              return `
+                <article class="doc-card" draggable="true" onclick="Library.openById('${d.id}')" ondragstart="Folders.dragStart(event,'library','item','${d.id}')" ondragend="Folders.dragEnd(event)">
+                  <div class="doc-head">
+                    <div class="doc-icon">${docTypeIconMarkup(d, 'card')}</div>
+                    <div class="doc-head-main">
+                      <div class="doc-kicker">
+                        <span class="doc-type-pill">${escHtml(docTypeLabel(d.type))}</span>
+                        ${d.lang ? `<span>${escHtml(String(d.lang).toUpperCase())}</span>` : ''}
+                      </div>
+                      <div class="doc-title">${escHtml(d.title || d.name)}</div>
+                      <div class="doc-author">${escHtml(libraryCardMeta(d) || 'Sem metadados principais')}</div>
+                    </div>
+                  </div>
+                  <div class="doc-path">${escHtml(folderPath)}</div>
+                  ${metaBits.length ? `<div class="doc-meta-list">${metaBits.map(bit => `<span class="doc-meta-chip">${escHtml(bit)}</span>`).join('')}</div>` : ''}
+                  ${d.tags?.length ? `<div class="doc-tags">${d.tags.map(t => `<span class="doc-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
+                  <button class="doc-edit" onclick="event.stopPropagation();Library.editMeta('${d.id}')">✏</button>
+                </article>
+              `;
+            }).join('')}
+          </div>
+        </section>
+      `);
+    }
+
+    if (!sections.length) {
+      grid.innerHTML = '';
+      empty.style.display = 'block';
+      const libraryIsEmpty = !S.docs.length && !Folders.list('library').length && !currentFolderId;
+      empty.innerHTML = `
+        <h3>${libraryIsEmpty ? 'Nenhum documento ainda' : 'Nada nesta pasta'}</h3>
+        <p>${libraryIsEmpty
+          ? 'Clique em "Adicionar PDF" para importar seus primeiros documentos.'
+          : 'Use as ações de pasta para organizar a Biblioteca ou adicione novos PDFs para preencher este espaço.'}</p>
+      `;
+      return;
+    }
+
     empty.style.display = 'none';
-    grid.innerHTML = docs.sort((a, b) => b.addedAt - a.addedAt).map(d =>
-      `<div class="doc-card" draggable="true" onclick="Library.openById('${d.id}')" ondragstart="Folders.dragStart(event,'library','item','${d.id}')" ondragend="Folders.dragEnd(event)">
-        <div class="doc-icon">${docTypeIconMarkup(d, 'card')}</div>
-        <div class="doc-title">${escHtml(d.title || d.name)}</div>
-        <div class="doc-author">${escHtml(d.author || '—')}${d.year ? ' · ' + escHtml(d.year) : ''}</div>
-        ${d.tags?.length ? `<div class="doc-tags">${d.tags.map(t => `<span class="doc-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
-        <button class="doc-edit" onclick="event.stopPropagation();Library.editMeta('${d.id}')">✏</button>
-      </div>`
-    ).join('');
-    const sortedDocs = docs.sort((a, b) => b.addedAt - a.addedAt);
-    Array.from(grid.querySelectorAll('.doc-author')).forEach((el, index) => {
-      const doc = sortedDocs[index];
-      if (doc) el.textContent = libraryCardMeta(doc);
-    });
+    empty.innerHTML = `
+      <h3>Nenhum documento ainda</h3>
+      <p>Clique em "Adicionar PDF" para importar seus primeiros documentos.</p>
+    `;
+    grid.innerHTML = sections.join('');
   },
 
   renderSidebar() {
@@ -3446,8 +3646,8 @@ function themedLibraryIconPath(kind) {
 function iconImgMarkup(src, alt, variant = 'tree') {
   return `<img class="ui-icon ui-icon-${variant}" src="${src}" alt="${escHtml(alt)}">`;
 }
-function folderIconMarkup() {
-  return iconImgMarkup(themedLibraryIconPath('folder'), 'Pasta', 'tree');
+function folderIconMarkup(variant = 'tree') {
+  return iconImgMarkup(themedLibraryIconPath('folder'), 'Pasta', variant);
 }
 function docTypeIconMarkup(doc, variant = 'tree') {
   const normalizedType = normalizeDocType(doc?.type);
@@ -3510,6 +3710,18 @@ function libraryCardMeta(doc) {
     ].filter(Boolean).join(' · ');
   }
   return `${doc.author || '—'}${doc.year ? ' · ' + doc.year : ''}`;
+}
+function libraryCardMetaParts(doc) {
+  const bits = [];
+  if (doc.author) bits.push(doc.author);
+  if (doc.year) bits.push(String(doc.year));
+  if (doc.area) bits.push(doc.area);
+  if (doc.reportSubtype) bits.push(doc.reportSubtype);
+  if (doc.otherSubtype) bits.push(doc.otherSubtype);
+  if (doc.context) bits.push(doc.context);
+  if (doc.source) bits.push(doc.source);
+  if (doc.fullDate) bits.push(doc.fullDate);
+  return [...new Set(bits.filter(Boolean))].slice(0, 4);
 }
 function cleanDoi(raw) {
   return String(raw || '')

@@ -6,7 +6,7 @@ PARTE 1: Formatação de Layout
 ✓✓✓ Titulo do artigo e DOI automaticamente no documento do PDF**
 ✓✓✓ Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
 ✓✓✓ Zoom in e Zoom out manter o PDF na mesma página
-Visualizador de páginas separadinhas
+--- Visualizador de páginas separadinhas
 Sistema de pastas e subpastas
 ✓✓✓ Retirar parte de "Documentos"
 Sistema de abas**

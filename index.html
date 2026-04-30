@@ -44,14 +44,21 @@
       <div class="lib-top">
         <h1 class="view-title">Biblioteca</h1>
       </div>
-      <div class="folder-toolbar" id="lib-folder-bar"></div>
-      <div class="lib-filters" id="lib-filters"></div>
-      <div class="lib-grid-wrap">
-        <div id="doc-grid" class="doc-grid"></div>
-        <div id="lib-empty" class="empty" style="display:none;">
-          <h3>Nenhum documento ainda</h3>
-          <p>Clique em "Adicionar PDF" para importar seus primeiros documentos.</p>
-        </div>
+      <div class="lib-shell">
+        <aside class="lib-explorer-panel">
+          <div class="folder-toolbar" id="lib-folder-bar"></div>
+        </aside>
+        <section class="lib-content-panel">
+          <div id="lib-current-folder"></div>
+          <div class="lib-filters" id="lib-filters"></div>
+          <div class="lib-grid-wrap">
+            <div id="doc-grid" class="lib-results"></div>
+            <div id="lib-empty" class="empty" style="display:none;">
+              <h3>Nenhum documento ainda</h3>
+              <p>Clique em "Adicionar PDF" para importar seus primeiros documentos.</p>
+            </div>
+          </div>
+        </section>
       </div>
     </div>
 

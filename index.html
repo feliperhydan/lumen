@@ -41,13 +41,7 @@
 
     <!-- LIBRARY -->
     <div class="view active" id="library-view">
-      <div class="lib-top">
-        <h1 class="view-title">Biblioteca</h1>
-      </div>
       <div class="lib-shell">
-        <aside class="lib-explorer-panel">
-          <div class="folder-toolbar" id="lib-folder-bar"></div>
-        </aside>
         <section class="lib-content-panel">
           <div id="lib-current-folder"></div>
           <div class="lib-filters" id="lib-filters"></div>
@@ -136,9 +130,20 @@
 
     <!-- SEARCH -->
     <div class="view" id="search-view" style="overflow-y:auto;padding:40px;">
-      <h1 class="view-title" style="margin-bottom:20px;">Busca Global</h1>
-      <input type="text" id="search-input" placeholder="Buscar em highlights, notas, projetos e anexos…" oninput="Search.run(this.value)">
-      <div id="search-results"></div>
+      <div class="search-shell">
+        <div class="search-header">
+          <h1 class="view-title">Busca Global</h1>
+          <p class="search-sub">Pesquise o conteúdo do Lumen e organize a estrutura da Biblioteca no mesmo espaço.</p>
+        </div>
+        <div class="search-block">
+          <input type="text" id="search-input" placeholder="Buscar em highlights, notas, projetos e anexos…" oninput="Search.run(this.value)">
+          <div id="search-results"></div>
+        </div>
+        <div class="search-block">
+          <div id="search-folder-current"></div>
+          <div class="folder-toolbar search-folder-toolbar" id="search-folder-bar"></div>
+        </div>
+      </div>
     </div>
 
   </div>

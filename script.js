@@ -690,6 +690,37 @@ const Folders = {
     };
   },
 
+  parentId(scope, id) {
+    const folder = this.find(scope, id);
+    return folder?.parentId || 'root';
+  },
+
+  goUp(scope) {
+    const key = this._scopeKey(scope);
+    const currentId = S.currentFolder[key] || 'root';
+    if (currentId === 'root') return;
+    this.setCurrent(scope, this.parentId(scope, currentId));
+  },
+
+  breadcrumbMarkup(scope, id, drag = true) {
+    const crumbs = this.breadcrumb(scope, id);
+    return crumbs.map((crumb, index) => {
+      const targetKind = crumb.id === 'root' ? 'root' : 'folder';
+      const targetId = crumb.id === 'root' ? 'root' : crumb.id;
+      const dndAttrs = drag
+        ? `ondragover="Folders.dragOver(event,'${scope}','${targetKind}','${targetId}')"
+           ondragleave="Folders.dragLeave(event)"
+           ondrop="Folders.drop(event,'${scope}','${targetKind}','${targetId}')"`
+        : '';
+      return `
+        <span class="lib-breadcrumb-drop" ${dndAttrs}>
+          <button class="lib-breadcrumb" onclick="Folders.setCurrent('${scope}','${crumb.id}')">${escHtml(crumb.name)}</button>
+        </span>
+        ${index < crumbs.length - 1 ? '<span>/</span>' : ''}
+      `;
+    }).join('');
+  },
+
   isVisible(scope, itemFolderId) {
     const key = this._scopeKey(scope);
     const current = S.currentFolder[key] || 'root';
@@ -836,7 +867,7 @@ const Folders = {
   },
 
   renderToolbar(scope) {
-    const hostId = scope === 'projects' ? 'proj-folder-bar' : 'lib-folder-bar';
+    const hostId = scope === 'projects' ? 'proj-folder-bar' : 'search-folder-bar';
     const host = document.getElementById(hostId);
     if (!host) return;
     host.innerHTML = scope === 'library'
@@ -860,6 +891,7 @@ const Folders = {
       Proj.load();
     } else {
       Library.renderGrid();
+      Search.renderExplorer();
     }
     this.renderToolbar(scope);
   },
@@ -879,6 +911,10 @@ const Folders = {
     const cur = S.currentFolder[key] || 'root';
     if (cur === 'root') {
       toast('Selecione uma pasta para excluir.');
+      return;
+    }
+    if (scope === 'library') {
+      this.confirmRemoveLibraryFolder(cur);
       return;
     }
     this.remove(scope, cur);
@@ -923,7 +959,10 @@ const Folders = {
     toast('Pasta criada.');
     Modal.hide();
     this.renderToolbar(scope);
-    if (scope === 'projects') Proj.load(); else Library.renderGrid();
+    if (scope === 'projects') Proj.load(); else {
+      Library.renderGrid();
+      Search.renderExplorer();
+    }
   },
 
   manage(scope) {
@@ -966,26 +1005,71 @@ const Folders = {
     if (scope === 'library') syncProjectFoldersFromLibrary();
     await saveFolders();
     this.renderToolbar(scope);
-    if (scope === 'projects') Proj.load(); else Library.renderGrid();
+    if (scope === 'projects') Proj.load(); else {
+      Library.renderGrid();
+      Search.renderExplorer();
+    }
     toast('Pasta renomeada.');
   },
 
-  async remove(scope, id) {
+  confirmRemoveLibraryFolder(id) {
+    const f = this.find('library', id);
+    if (!f) return;
+    const nestedIds = new Set([id, ...this.descendants('library', id)]);
+    const docsInside = S.docs.filter(d => d.folderId && nestedIds.has(d.folderId)).length;
+    Modal.show(`
+      <h3>Excluir pasta</h3>
+      <div class="modal-subtle">
+        A pasta <strong>${escHtml(f.name)}</strong> será removida junto com as subpastas.
+        Escolha o destino dos arquivos que estão dentro dela.
+      </div>
+      <div class="folder-toolbar-summary" style="margin:4px 0 6px;">
+        <div class="folder-summary-card">
+          <strong>${docsInside}</strong>
+          <span>arquivos afetados</span>
+        </div>
+        <div class="folder-summary-card">
+          <strong>${nestedIds.size - 1}</strong>
+          <span>subpastas abaixo</span>
+        </div>
+      </div>
+      <div class="mactions">
+        <button class="btn" onclick="Modal.hide()">Cancelar</button>
+        <button class="btn" onclick="Folders.remove('library','${id}',{deleteDocs:false})">Mover arquivos para a raiz</button>
+        <button class="btn btn-d" onclick="Folders.remove('library','${id}',{deleteDocs:true})">Excluir arquivos com a pasta</button>
+      </div>
+    `);
+  },
+
+  async remove(scope, id, options = {}) {
     const f = this.find(scope, id);
     if (!f) return;
-    if (!confirm(`Excluir a pasta "${f.name}" e suas subpastas? Itens serão movidos para a raiz.`)) return;
+    const deleteDocs = !!options.deleteDocs;
+    if (scope !== 'library' && !confirm(`Excluir a pasta "${f.name}" e suas subpastas? Itens serão movidos para a raiz.`)) return;
 
     const key = this._scopeKey(scope);
     const removed = new Set([id, ...this.descendants(scope, id)]);
+    const nextSelected = f.parentId || 'root';
     S.folders[key] = this.list(scope).filter(x => !removed.has(x.id));
 
     if (scope === 'library') {
       const touched = S.docs.filter(d => d.folderId && removed.has(d.folderId));
-      for (const d of touched) {
-        d.folderId = null;
-        await DB.pdfs.save(d);
+      if (deleteDocs) {
+        for (const d of touched) {
+          await DB.pdfs.del(d.id);
+          S.docs = S.docs.filter(doc => doc.id !== d.id);
+          if (S.currentDoc?.id === d.id) {
+            S.currentDoc = null;
+            S.highlights = [];
+          }
+        }
+      } else {
+        for (const d of touched) {
+          d.folderId = null;
+          await DB.pdfs.save(d);
+        }
       }
-      if (removed.has(S.currentFolder.library)) S.currentFolder.library = 'root';
+      if (removed.has(S.currentFolder.library)) S.currentFolder.library = nextSelected;
       Library.renderGrid();
       Library.renderSidebar();
     } else {
@@ -1003,8 +1087,10 @@ const Folders = {
     if (scope === 'library') syncProjectFoldersFromLibrary();
     if (!S.folders.projects.some(f => f.id === S.currentFolder.projects)) S.currentFolder.projects = 'root';
     await saveFolders();
+    Modal.hide();
     this.renderToolbar(scope);
-    toast('Pasta removida.');
+    if (scope === 'library') Search.renderExplorer();
+    toast(deleteDocs ? 'Pasta e arquivos removidos.' : 'Pasta removida.');
   },
 };
 
@@ -2095,12 +2181,9 @@ const Library = {
 
     const currentId = S.currentFolder.library || 'root';
     const currentFolder = currentId === 'root' ? null : Folders.find('library', currentId);
-    const crumbs = Folders.breadcrumb('library', currentId);
     const stats = Folders.folderStats('library', currentFolder?.id || null);
     const currentLabel = currentFolder?.name || 'Biblioteca';
-    const crumbHtml = crumbs.map((crumb, index) => `
-      <button class="lib-breadcrumb" onclick="Folders.setCurrent('library','${crumb.id}')">${escHtml(crumb.name)}</button>${index < crumbs.length - 1 ? '<span>/</span>' : ''}
-    `).join('');
+    const crumbHtml = Folders.breadcrumbMarkup('library', currentId, true);
 
     host.innerHTML = `
       <div class="lib-current-bar">
@@ -2110,8 +2193,10 @@ const Library = {
           <div class="lib-current-sub">${stats.items} arquivo(s) e ${stats.folders} subpasta(s) neste nível.</div>
         </div>
         <div class="lib-current-actions">
+          ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.goUp('library')">← Voltar</button>` : ''}
           <button class="btn btn-sm" onclick="Folders.create('library','${currentFolder?.id || 'root'}')">+ Pasta aqui</button>
           ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.rename('library','${currentFolder.id}')">Renomear pasta</button>` : ''}
+          <button class="btn btn-sm" onclick="UI.nav('search')">Abrir Explorador</button>
         </div>
       </div>
     `;
@@ -3205,6 +3290,44 @@ const Attachments = {
    SEARCH
 ══════════════════════════════════════ */
 const Search = {
+  async load() {
+    S.docs = await DB.pdfs.all();
+    this.renderExplorer();
+    const input = document.getElementById('search-input');
+    if (input?.value?.trim()) {
+      await this.run(input.value);
+    } else {
+      const res = document.getElementById('search-results');
+      if (res) res.innerHTML = '';
+    }
+  },
+
+  renderExplorer() {
+    const currentId = S.currentFolder.library || 'root';
+    const currentFolder = currentId === 'root' ? null : Folders.find('library', currentId);
+    const stats = Folders.folderStats('library', currentFolder?.id || null);
+    const host = document.getElementById('search-folder-current');
+    if (host) {
+      host.innerHTML = `
+        <div class="lib-current-bar">
+          <div class="lib-current-meta">
+            <div class="lib-breadcrumbs">${Folders.breadcrumbMarkup('library', currentId, true)}</div>
+            <div class="lib-current-title">${escHtml(currentFolder?.name || 'Explorador da Biblioteca')}</div>
+            <div class="lib-current-sub">${stats.items} arquivo(s) e ${stats.folders} subpasta(s) neste nível.</div>
+          </div>
+          <div class="lib-current-actions">
+            ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.goUp('library')">← Voltar</button>` : ''}
+            <button class="btn btn-sm" onclick="Folders.setCurrent('library','root')">Raiz</button>
+            <button class="btn btn-sm" onclick="Folders.create('library','${currentFolder?.id || 'root'}')">+ Pasta aqui</button>
+            ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.rename('library','${currentFolder.id}')">Renomear</button>` : ''}
+            ${currentFolder ? `<button class="btn btn-d btn-sm" onclick="Folders.removeSelected('library')">Excluir</button>` : ''}
+          </div>
+        </div>
+      `;
+    }
+    Folders.renderToolbar('library');
+  },
+
   async run(q) {
     q = q.trim().toLowerCase();
     const res = document.getElementById('search-results');
@@ -3314,6 +3437,7 @@ const UI = {
     if (view === 'suco')        Suco.render();
     if (view === 'projects')    Proj.load();
     if (view === 'attachments') Attachments.load();
+    if (view === 'search')      Search.load();
   },
 
   tab(t) {

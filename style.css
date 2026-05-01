@@ -629,6 +629,12 @@ body.view-proj-editor{--back-top:16px;}
 .tags-wrap input{border:none;outline:none;font-size:13px;font-family:var(--font-ui);background:transparent;color:var(--text);flex:1;min-width:80px;}
 .tag-pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(42,92,138,.12);color:var(--accent);border:1px solid rgba(42,92,138,.2);}
 .tag-pill button{background:none;border:none;cursor:pointer;color:var(--accent);font-size:13px;line-height:1;padding:0 1px;}
+.tags-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+.tags-toolbar select{
+  padding:6px 10px;border:1px solid var(--border);border-radius:6px;
+  font-size:12px;font-family:var(--font-ui);background:var(--surface);color:var(--text);
+}
+.tags-toolbar select:focus{border-color:var(--accent);outline:none;}
 
 @media (max-width:700px){
   .modal{min-width:0;width:94%;padding:20px;}

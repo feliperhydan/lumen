@@ -212,6 +212,7 @@ const S = {
   currentPage: 1, totalPages: 0, scale: 1.5,
   view: 'library', activeTab: 'reader',
   cats: [], pending: null, openProjId: null,
+  docTags: [],
   selectedHL: null, imgMode: false,
   folders: {library: [], projects: []},
   currentFolder: {library: 'root', projects: 'root'},
@@ -262,6 +263,9 @@ async function loadCats() {
   try {
     const settings = await DB.settings.get();
     S.cats = Array.isArray(settings?.cats) && settings.cats.length ? settings.cats : DEF_CATS;
+    S.docTags = Array.isArray(settings?.tags)
+      ? [...new Set(settings.tags.map(t => String(t || '').trim()).filter(Boolean))]
+      : [];
     document.body.classList.toggle('dark-mode', Boolean(settings?.darkMode));
 
     S.folders.library = normalizeFolderList(settings?.libraryFolders, 'library');
@@ -288,6 +292,7 @@ async function loadCats() {
   } catch (err) {
     console.warn('Falha ao carregar configurações do servidor.', err);
     S.cats = DEF_CATS;
+    S.docTags = [];
     if (!S.folders.library.length) S.folders.library = buildDefaultFolders('library');
     if (!S.folders.projects.length) S.folders.projects = buildDefaultFolders('projects');
   }
@@ -296,6 +301,12 @@ async function loadCats() {
 function saveCats() {
   DB.settings.patch({cats: S.cats}).catch(err => {
     console.warn('Falha ao salvar categorias no servidor.', err);
+  });
+}
+
+function saveTags() {
+  DB.settings.patch({tags: S.docTags}).catch(err => {
+    console.warn('Falha ao salvar tags no servidor.', err);
   });
 }
 
@@ -2128,7 +2139,9 @@ const Library = {
   },
 
   renderFilters() {
-    const allTags  = [...new Set(S.docs.flatMap(d => d.tags || []))].sort();
+    const allTags  = (S.docTags && S.docTags.length)
+      ? [...S.docTags].sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      : [...new Set(S.docs.flatMap(d => d.tags || []))].sort();
     const allTypes = [...new Set(S.docs.map(d => d.type).filter(Boolean))].sort();
     const allLangs = [...new Set(S.docs.map(d => d.lang).filter(Boolean))].sort();
 
@@ -2352,9 +2365,10 @@ const Library = {
     const isBookChapter = isBookChapterDoc(d);
     const isReport = isReportDoc(d);
     const isOther = isOtherDoc(d);
-    const tagsHtml = (d.tags || []).map(t =>
+    const tagsHtml = (d.tags || []).filter(t => S.docTags.includes(t)).map(t =>
       `<span class="tag-pill">${escHtml(t)}<button onclick="Library._removeTagInModal('${escHtml(t)}')">×</button></span>`
     ).join('');
+    const tagOptions = S.docTags.map(t => `<option value="${escHtml(t)}">${escHtml(t)}</option>`).join('');
     Modal.show(`
       <h3>Editar Metadados</h3>
       <div class="fg-row">
@@ -2462,10 +2476,15 @@ const Library = {
         </div>
       ` : ''}
       <div class="fg">
-        <label>Tags <small style="font-weight:400;color:var(--text3)">(Enter para adicionar)</small></label>
-        <div class="tags-wrap" id="em-tags-wrap" onclick="document.getElementById('em-tag-in').focus()">
-          ${tagsHtml}
-          <input id="em-tag-in" placeholder="nova tag…" onkeydown="Library._tagKey(event,'${id}')">
+        <label>Tags</label>
+        <div class="tags-wrap" id="em-tags-wrap">
+          ${tagsHtml || '<span style="font-size:11px;color:var(--text3);">Nenhuma tag selecionada.</span>'}
+        </div>
+        <div class="tags-toolbar">
+          <select id="em-tag-sel" ${S.docTags.length ? '' : 'disabled'}>
+            ${S.docTags.length ? tagOptions : '<option value="">Nenhuma tag disponível</option>'}
+          </select>
+          <button class="btn btn-sm" type="button" onclick="Library._addTagInModal()" ${S.docTags.length ? '' : 'disabled'}>+ Adicionar</button>
         </div>
       </div>
       <div class="mactions">
@@ -2504,25 +2523,26 @@ const Library = {
     }
     document.getElementById('em-type')?.addEventListener('change', () => this.updateMetaTypeFields());
     this.updateMetaTypeFields();
-    Library._modalTags = [...(d.tags || [])];
+    Library._modalTags = [...(d.tags || [])].filter(t => S.docTags.includes(t));
   },
 
   _modalTags: [],
 
-  _tagKey(e, docId) {
-    if (e.key === 'Enter' || e.key === ',') {
-      e.preventDefault();
-      const val = e.target.value.trim().toLowerCase();
-      if (val && !this._modalTags.includes(val)) {
-        this._modalTags.push(val);
-        const wrap = document.getElementById('em-tags-wrap');
-        const pill = document.createElement('span');
-        pill.className = 'tag-pill';
-        pill.innerHTML = `${escHtml(val)}<button onclick="Library._removeTagInModal('${escHtml(val)}')">×</button>`;
-        wrap.insertBefore(pill, e.target);
-      }
-      e.target.value = '';
-    }
+  _addTagInModal() {
+    const sel = document.getElementById('em-tag-sel');
+    const val = String(sel?.value || '').trim();
+    if (!val || !S.docTags.includes(val)) return;
+    if (this._modalTags.includes(val)) return;
+    this._modalTags.push(val);
+
+    const wrap = document.getElementById('em-tags-wrap');
+    if (!wrap) return;
+    const empty = wrap.querySelector('span');
+    if (empty && empty.textContent.includes('Nenhuma tag')) empty.remove();
+    const pill = document.createElement('span');
+    pill.className = 'tag-pill';
+    pill.innerHTML = `${escHtml(val)}<button onclick="Library._removeTagInModal('${escHtml(val)}')">×</button>`;
+    wrap.appendChild(pill);
   },
 
   _removeTagInModal(tag) {
@@ -2530,6 +2550,10 @@ const Library = {
     document.getElementById('em-tags-wrap').querySelectorAll('.tag-pill').forEach(p => {
       if (p.textContent.replace('×', '').trim() === tag) p.remove();
     });
+    const wrap = document.getElementById('em-tags-wrap');
+    if (wrap && !wrap.querySelector('.tag-pill')) {
+      wrap.innerHTML = '<span style="font-size:11px;color:var(--text3);">Nenhuma tag selecionada.</span>';
+    }
   },
 
   updateMetaTypeFields() {
@@ -2810,7 +2834,7 @@ const Library = {
       d.context = '';
       d.description = '';
     }
-    d.tags   = [...this._modalTags];
+    d.tags   = [...this._modalTags].filter(t => S.docTags.includes(t));
     await DB.pdfs.save(d);
     Modal.hide(); this.renderGrid(); this.renderSidebar();
     if (S.currentDoc?.id === id) {
@@ -3844,6 +3868,11 @@ const UI = {
         </div>
       </div>
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border2);">
+        <div class="fg"><label style="margin-bottom:8px;display:block;font-size:12px;color:var(--text2);font-weight:500;">Tags dos Arquivos</label>
+          <button class="btn btn-sm" style="width:100%;text-align:left;" onclick="Modal.hide();UI.showTagEditor()">⊞ Configurar Tags</button>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border2);">
         <div class="fg"><label style="margin-bottom:8px;display:block;font-size:12px;color:var(--text2);font-weight:500;">Backup local</label>
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn btn-sm" onclick="UI.downloadBackup()">⬇️ Baixar backup</button>
@@ -3873,6 +3902,25 @@ const UI = {
       <div class="mactions">
         <button class="btn" onclick="Modal.hide()">Cancelar</button>
         <button class="btn btn-p" onclick="UI._saveCats()">Salvar</button>
+      </div>
+    `);
+  },
+
+  showTagEditor() {
+    Modal.show(`
+      <h3>Configurar Tags dos Arquivos</h3>
+      <div id="tag-editor-list">
+        ${S.docTags.map((t, i) =>
+          `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <input type="text" value="${escHtml(t)}" id="tn-${i}" style="flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:var(--font-ui);">
+            <button class="btn btn-d btn-sm" onclick="UI._removeTag(${i})">✕</button>
+          </div>`
+        ).join('')}
+      </div>
+      <button class="btn btn-sm" style="width:100%;margin-bottom:12px;" onclick="UI._addTag()">+ Adicionar Tag</button>
+      <div class="mactions">
+        <button class="btn" onclick="Modal.hide()">Cancelar</button>
+        <button class="btn btn-p" onclick="UI._saveTags()">Salvar</button>
       </div>
     `);
   },
@@ -3932,6 +3980,26 @@ const UI = {
       }
     });
     saveCats(); Modal.hide(); this.renderCats(); toast('Categorias salvas!');
+  },
+
+  _addTag() {
+    S.docTags.push('Nova tag');
+    this.showTagEditor();
+  },
+  _removeTag(i) { S.docTags.splice(i, 1); this.showTagEditor(); },
+  _saveTags() {
+    const next = [];
+    document.querySelectorAll('[id^="tn-"]').forEach((el) => {
+      const val = String(el.value || '').trim();
+      if (val) next.push(val);
+    });
+    S.docTags = [...new Set(next)].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    S.libFilter.tags = S.libFilter.tags.filter(t => S.docTags.includes(t));
+    saveTags();
+    Modal.hide();
+    Library.renderFilters();
+    Library.renderGrid();
+    toast('Tags salvas!');
   },
 
   toggleDark(on) {

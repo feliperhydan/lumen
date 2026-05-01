@@ -167,6 +167,7 @@ const DB = (() => {
         }
       },
       syncDoiMetadata: id => request(`/pdfs/${encodeURIComponent(id)}/sync-doi-metadata`, {method: 'POST'}),
+      syncIsbnMetadata: id => request(`/pdfs/${encodeURIComponent(id)}/sync-isbn-metadata`, {method: 'POST'}),
       getBinary: async id => {
         const res = await fetch(`${API_BASE}/pdfs/${encodeURIComponent(id)}/file`);
         if (!res.ok) throw new Error('Falha ao carregar PDF do servidor.');
@@ -2324,15 +2325,22 @@ const Library = {
     if (doc) await this.open(doc);
   },
 
-  async open(doc) {
+  async open(doc, options = {}) {
+    if (!options?.skipHistory && (S.view === 'reader' || S.view === 'suco')) {
+      if (S.currentDoc && S.currentDoc.id !== doc.id) {
+        UI._pushHistory(UI._captureNavState());
+      }
+    }
     S.highlights = await DB.highlights.byPDF(doc.id);
     S.currentDoc = doc;
-    UI.nav('reader', false);
+    UI.nav('reader', false, { skipHistory: Boolean(options?.skipHistory) });
     document.querySelectorAll('[id^="sdoc-"]').forEach(e => e.classList.remove('active'));
     document.getElementById(`sdoc-${doc.id}`)?.classList.add('active');
     UI.renderCats(); UI.renderPanelInfo(doc);
     document.getElementById('doc-title-hdr').textContent = doc.title || doc.name;
-    await PV.open(doc);
+    const pvOptions = { ...options };
+    delete pvOptions.skipHistory;
+    await PV.open(doc, pvOptions);
   },
 
   editMeta(id) {
@@ -2447,6 +2455,12 @@ const Library = {
           <span class="meta-doi-tip">Usa os dados do DOI para preencher tÃ­tulo, autor(es) e ano automaticamente.</span>
         </div>
       ` : ''}
+      ${isBook ? `
+        <div class="meta-doi-tools meta-isbn-tools">
+          <button class="btn btn-sm" id="em-sync-isbn-btn" onclick="Library.syncMetaFromIsbn('${id}')">Atualizar dados pelo ISBN</button>
+          <span class="meta-doi-tip">Usa os dados do ISBN para preencher tÃ­tulo, autor(es), ano, editora, ediÃ§Ã£o e pÃ¡ginas.</span>
+        </div>
+      ` : ''}
       <div class="fg">
         <label>Tags <small style="font-weight:400;color:var(--text3)">(Enter para adicionar)</small></label>
         <div class="tags-wrap" id="em-tags-wrap" onclick="document.getElementById('em-tag-in').focus()">
@@ -2537,6 +2551,7 @@ const Library = {
     const reportFields = document.getElementById('em-report-fields');
     const otherFields = document.getElementById('em-other-fields');
     const doiTools = document.querySelector('.meta-doi-tools');
+    const isbnTools = document.querySelector('.meta-isbn-tools');
     const isOther = type === 'outro';
 
     if (authorWrap) authorWrap.style.display = isOther ? 'none' : '';
@@ -2552,6 +2567,7 @@ const Library = {
     if (reportFields) reportFields.style.display = isReport ? '' : 'none';
     if (otherFields) otherFields.style.display = isOther ? '' : 'none';
     if (doiTools) doiTools.style.display = isArticle ? '' : 'none';
+    if (isbnTools) isbnTools.style.display = isBook ? '' : 'none';
   },
 
   async syncTitleFromDoi(id) {
@@ -2590,6 +2606,52 @@ const Library = {
       if (btn) {
         btn.disabled = false;
         btn.textContent = 'Atualizar dados pelo DOI';
+      }
+    }
+  },
+
+  async syncMetaFromIsbn(id) {
+    const d = S.docs.find(x => x.id === id);
+    if (!d) return;
+    if (!isBookDoc(d)) {
+      toast('A atualizacao automatica por ISBN esta disponivel apenas para livros.');
+      return;
+    }
+
+    const isbnInput = document.getElementById('em-isbn');
+    const isbn = String(isbnInput?.value || '').trim();
+    if (!isbn) {
+      toast('Informe um ISBN antes de tentar preencher os metadados.');
+      return;
+    }
+
+    d.isbn = isbn;
+    const btn = document.getElementById('em-sync-isbn-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Buscando dados...';
+    }
+
+    try {
+      await DB.pdfs.save(d);
+      const result = await syncDocMetaFromIsbn(d, { refreshUi: true });
+      document.getElementById('em-title').value = d.title || d.name;
+      document.getElementById('em-author').value = d.author || '';
+      document.getElementById('em-year').value = d.year || '';
+      document.getElementById('em-isbn').value = d.isbn || '';
+      document.getElementById('em-publisher').value = d.publisher || '';
+      document.getElementById('em-edition').value = d.edition || '';
+      document.getElementById('em-page-count').value = d.pageCount || '';
+      toast(result?.metadata?.title || result?.metadata?.author
+        ? 'Metadados do livro atualizados automaticamente pelo ISBN.'
+        : 'Metadados sincronizados pelo ISBN.');
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Falha ao buscar metadados pelo ISBN.');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Atualizar dados pelo ISBN';
       }
     }
   },
@@ -2857,9 +2919,12 @@ const Proj = {
     toast('Projeto movido.');
   },
 
-  async open(id) {
+  async open(id, options = {}) {
     const p = typeof id === 'string' ? await DB.projects.get(id) : id;
     if (!p) return;
+    UI._maybePushHistory('proj-editor', options);
+    S.view = 'proj-editor';
+    UI._setViewClass('proj-editor');
     S.openProjId = p.id;
     document.getElementById('proj-edit-title').textContent = p.title;
 
@@ -3405,8 +3470,104 @@ const VIEWS = [
 
 const UI = {
   _uploadPrompt: null,
-  nav(view, updateNav = true) {
+  _history: [],
+  _skipNextHistory: false,
+
+  _stateKey(state) {
+    if (!state) return '';
+    return [state.view, state.activeTab, state.docId, state.projId].filter(Boolean).join('|');
+  },
+
+  _captureNavState() {
+    const state = { view: S.view, activeTab: S.activeTab };
+    if (S.view === 'reader' || S.view === 'suco') {
+      state.docId = S.currentDoc ? S.currentDoc.id : null;
+      state.viewState = S.pdfDoc ? PV._captureViewState() : null;
+    }
+    if (S.view === 'proj-editor') {
+      state.projId = S.openProjId || null;
+    }
+    return state;
+  },
+
+  _pushHistory(state) {
+    if (!state || !state.view) return;
+    const last = this._history[this._history.length - 1];
+    if (last && this._stateKey(last) === this._stateKey(state)) return;
+    this._history.push(state);
+    this._refreshBackButton();
+  },
+
+  _refreshBackButton() {
+    const btn = document.getElementById('nav-back');
+    if (!btn) return;
+    btn.style.display = this._history.length ? 'inline-flex' : 'none';
+  },
+
+  _setViewClass(view) {
+    const body = document.body;
+    if (!body) return;
+    const views = ['library', 'reader', 'suco', 'projects', 'attachments', 'search', 'proj-editor'];
+    views.forEach(v => body.classList.remove(`view-${v}`));
+    if (view) body.classList.add(`view-${view}`);
+  },
+
+  _maybePushHistory(nextView, options = {}) {
+    if (options.skipHistory || this._skipNextHistory) {
+      this._skipNextHistory = false;
+      return;
+    }
+    if (nextView === S.view) return;
+    this._pushHistory(this._captureNavState());
+  },
+
+  async back() {
+    const prev = this._history.pop();
+    this._refreshBackButton();
+    if (!prev) return;
+    await this._restoreNavState(prev);
+  },
+
+  async _restoreNavState(state) {
+    if (!state?.view) return;
+
+    if (state.view === 'reader' || state.view === 'suco') {
+      const doc = state.docId ? S.docs.find(d => d.id === state.docId) : null;
+      const sameDoc = doc && S.currentDoc && doc.id === S.currentDoc.id && S.pdfDoc;
+
+      if (sameDoc) {
+        this._skipNextHistory = true;
+        this.tab(state.view);
+        if (state.viewState) PV._restoreViewState(state.viewState);
+        return;
+      }
+
+      if (doc) {
+        this._skipNextHistory = true;
+        await Library.open(doc, { preserveView: true, viewState: state.viewState, skipHistory: true });
+        if (state.view === 'suco') {
+          this._skipNextHistory = true;
+          this.tab('suco');
+        }
+        if (state.viewState) PV._restoreViewState(state.viewState);
+        return;
+      }
+    }
+
+    if (state.view === 'proj-editor' && state.projId) {
+      this._skipNextHistory = true;
+      await Proj.open(state.projId, { skipHistory: true });
+      return;
+    }
+
+    this._skipNextHistory = true;
+    this.nav(state.view, true, { skipHistory: true });
+  },
+
+  nav(view, updateNav = true, options = {}) {
+    this._maybePushHistory(view, options);
     S.view = view;
+    this._setViewClass(view);
     const isReader = view === 'reader' || view === 'suco';
     document.getElementById('main-tabs').style.display   = isReader ? 'flex' : 'none';
     document.getElementById('pdf-bar').style.display     = (view === 'reader' && S.pdfDoc) ? 'flex' : 'none';
@@ -3538,15 +3699,19 @@ const UI = {
           : null;
         const fileType = selectedTypes[i] || 'outro';
         let detectedDoi = '';
+        let detectedIsbn = '';
 
         if (fileType === 'artigo') {
           detectedDoi = await extractDoiFromPdfFile(file);
+        }
+        if (fileType === 'livro') {
+          detectedIsbn = await extractIsbnFromPdfFile(file);
         }
 
         const docPayload = {
           id, name: file.name.replace(/\.pdf$/i, ''),
           title: file.name.replace(/\.pdf$/i, ''),
-          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, isbn: '', publisher: '', edition: '', pageCount: '', academicSubtype: '', institution: '', program: '', advisor: '', coadvisor: '', bookTitle: '', pageRange: '', reportSubtype: '', responsible: '', fullDate: '', methodology: '', results: '', area: '', otherSubtype: '', source: '', context: '', description: '', tags: [],
+          author: '', year: '', type: fileType, lang: 'pt', doi: detectedDoi, isbn: detectedIsbn, publisher: '', edition: '', pageCount: '', academicSubtype: '', institution: '', program: '', advisor: '', coadvisor: '', bookTitle: '', pageRange: '', reportSubtype: '', responsible: '', fullDate: '', methodology: '', results: '', area: '', otherSubtype: '', source: '', context: '', description: '', tags: [],
           folderId: currentFolderId,
           addedAt: Date.now(), size: file.size,
         };
@@ -3564,7 +3729,21 @@ const UI = {
             toast(`"${savedDoc.title}" adicionado com DOI identificado.`);
           }
         }
+        else if (fileType === 'livro' && detectedIsbn) {
+          try {
+            const result = await syncDocMetaFromIsbn(savedDoc);
+            if (result?.metadata?.title || result?.metadata?.author) {
+              toast(`"${savedDoc.title}" adicionado com ISBN e metadados do livro.`);
+            } else {
+              toast(`"${savedDoc.title}" adicionado com ISBN identificado.`);
+            }
+          } catch (metaErr) {
+            console.warn('Falha ao sincronizar metadados pelo ISBN.', metaErr);
+            toast(`"${savedDoc.title}" adicionado com ISBN identificado.`);
+          }
+        }
         else if (fileType === 'artigo') toast(`"${savedDoc.title}" adicionado. DOI não encontrado automaticamente.`);
+        else if (fileType === 'livro') toast(`"${savedDoc.title}" adicionado. ISBN não encontrado automaticamente.`);
         else toast(`"${savedDoc.title}" adicionado!`);
       } catch(err) {
         console.error(err);
@@ -3635,6 +3814,8 @@ const UI = {
     sb.classList.toggle('collapsed', this._sidebarCollapsed);
     btn.classList.toggle('collapsed', this._sidebarCollapsed);
     btn.textContent = this._sidebarCollapsed ? '›' : '‹';
+    document.body.classList.toggle('sidebar-collapsed', this._sidebarCollapsed);
+    document.body.classList.toggle('sidebar-open', !this._sidebarCollapsed);
   },
 
   toggleRPanel() {
@@ -3799,6 +3980,18 @@ function isOtherDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'outro';
 }
 function libraryCardMeta(doc) {
+  if (isBookDoc(doc)) {
+    const edition = doc.edition ? `${doc.edition} ed.` : null;
+    const pages = doc.pageCount ? `${doc.pageCount}p` : null;
+    return [
+      doc.author || '—',
+      doc.year || null,
+      edition,
+      doc.publisher || null,
+      doc.lang || null,
+      pages,
+    ].filter(Boolean).join(' · ');
+  }
   if (isReportDoc(doc)) {
     return [
       doc.author || '—',
@@ -3847,6 +4040,28 @@ function matchDoi(text) {
 
   return '';
 }
+
+function normalizeIsbn13(raw) {
+  const digits = String(raw || '').replace(/[^0-9]/g, '');
+  if (digits.length !== 13) return '';
+  if (!digits.startsWith('978') && !digits.startsWith('979')) return '';
+  return digits;
+}
+
+function matchIsbn13(text) {
+  const source = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!source) return '';
+
+  const direct = source.match(/\b97[89][0-9\-\s]{10,16}[0-9]\b/g);
+  if (!direct) return '';
+
+  for (const hit of direct) {
+    const normalized = normalizeIsbn13(hit);
+    if (normalized) return normalized;
+  }
+
+  return '';
+}
 async function extractDoiFromPdfFile(file, maxPages = 6) {
   const data = await file.arrayBuffer();
   const loadingTask = pdfjsLib.getDocument({data});
@@ -3866,6 +4081,36 @@ async function extractDoiFromPdfFile(file, maxPages = 6) {
     }
   } catch (err) {
     console.warn('Falha ao extrair DOI automaticamente do PDF.', err);
+  } finally {
+    if (typeof loadingTask.destroy === 'function') {
+      try {
+        await loadingTask.destroy();
+      } catch (_err) {}
+    }
+  }
+
+  return '';
+}
+
+async function extractIsbnFromPdfFile(file, maxPages = 8) {
+  const data = await file.arrayBuffer();
+  const loadingTask = pdfjsLib.getDocument({data});
+
+  try {
+    const pdf = await loadingTask.promise;
+    const total = Math.min(pdf.numPages, maxPages);
+    let text = '';
+
+    for (let pageNum = 1; pageNum <= total; pageNum += 1) {
+      const page = await pdf.getPage(pageNum);
+      const content = await page.getTextContent();
+      text += ` ${content.items.map(item => item.str || '').join(' ')}`;
+
+      const isbn = matchIsbn13(text);
+      if (isbn) return isbn;
+    }
+  } catch (err) {
+    console.warn('Falha ao extrair ISBN automaticamente do PDF.', err);
   } finally {
     if (typeof loadingTask.destroy === 'function') {
       try {
@@ -3904,6 +4149,35 @@ async function syncDocTitleFromDoi(doc, options = {}) {
 
   return { doc, metadata: payload?.metadata || null };
 }
+
+async function syncDocMetaFromIsbn(doc, options = {}) {
+  if (!doc || !doc.id || !isBookDoc(doc)) return null;
+  if (!String(doc.isbn || '').trim()) return null;
+
+  const payload = await DB.pdfs.syncIsbnMetadata(doc.id);
+  const updatedDoc = payload?.doc;
+  if (!updatedDoc) {
+    throw new Error('Nao foi possivel atualizar os metadados pelo ISBN.');
+  }
+
+  Object.assign(doc, updatedDoc);
+  const ix = S.docs.findIndex(item => item.id === doc.id);
+  if (ix >= 0) S.docs[ix] = doc;
+  if (S.currentDoc?.id === doc.id) S.currentDoc = doc;
+
+  if (options.refreshUi) {
+    Library.renderGrid();
+    Library.renderSidebar();
+    if (S.currentDoc?.id === doc.id) {
+      UI.renderPanelInfo(doc);
+      document.getElementById('doc-title-hdr').textContent = doc.title || doc.name;
+      const readerName = document.getElementById('reader-doc-name');
+      if (readerName) readerName.textContent = doc.title || doc.name;
+    }
+  }
+
+  return { doc, metadata: payload?.metadata || null };
+}
 function hexToRgba(hex, alpha) {
   const r = parseInt(hex.slice(1,3),16),
         g = parseInt(hex.slice(3,5),16),
@@ -3919,6 +4193,9 @@ async function init() {
     await DB.init();
     await loadCats();
     UI.renderCats();
+    document.body.classList.add('sidebar-open');
+    UI._setViewClass(S.view);
+    UI._refreshBackButton();
     ImgCapture.init();
     await Library.load();
     toast('Lumen carregado ✓');

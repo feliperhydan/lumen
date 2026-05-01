@@ -30,6 +30,8 @@
 <!-- Left sidebar toggle -->
 <div id="toggle-left" class="sidebar-toggle" onclick="UI.toggleSidebar()" title="Recolher/expandir painel">‹</div>
 
+<button id="nav-back" class="btn btn-ghost back-btn" onclick="UI.back()" title="Voltar um passo" style="display:none;" aria-label="Voltar">&larr;</button>
+
 <!-- ── MAIN ── -->
 <main id="main">
   <div class="main-tabs" id="main-tabs">
@@ -38,7 +40,6 @@
     <div id="doc-title-hdr"></div>
   </div>
   <div class="main-content">
-
     <!-- LIBRARY -->
     <div class="view active" id="library-view">
       <div class="lib-shell">

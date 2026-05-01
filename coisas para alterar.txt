@@ -7,15 +7,17 @@ PARTE 1: Formatação de Layout
 ✓✓✓ Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
 ✓✓✓ Zoom in e Zoom out manter o PDF na mesma página
 --- Visualizador de páginas separadinhas
-✓✓✓Sistema de pastas e subpastas
+✓✓✓ Sistema de pastas e subpastas
 ✓✓✓ Retirar parte de "Documentos"
 Sistema de abas**
-Botão de "Voltar" do leitor para página anterior
-Mudar nome lumen -> bibliotheca
+✓✓✓ Botão de "Voltar" do leitor para página anterior
+--- Mudar nome lumen -> bibliotheca
 Check-Workflow - Limpar excessos e funcionamento workflow
 Colocar indices nos icones de trabalhos academicos e capitulos de livro
 ✓✓✓Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
 ✓✓✓Colocar o tipo do arquivo nos icones dos arquivos (ex: artigo, livro, capitlo de livro etc)
+Back-up
+
 
 PARTE 2: Complemento de ferramentas
 

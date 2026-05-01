@@ -337,6 +337,57 @@ function normalizeCrossrefYear(message) {
   return '';
 }
 
+function openLibraryUrlForIsbn(isbn) {
+  const normalized = normalizeString(isbn).replace(/[^0-9]/g, '').trim();
+  if (!normalized) return '';
+  return `https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(normalized)}&format=json&jscmd=data`;
+}
+
+function normalizeOpenLibraryAuthor(authors) {
+  if (!Array.isArray(authors)) return '';
+  return authors
+    .map((author) => normalizeString(author?.name).trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
+function normalizeOpenLibraryPublisher(publishers) {
+  if (!Array.isArray(publishers)) return '';
+  return normalizeString(publishers[0]?.name).trim();
+}
+
+function normalizeOpenLibraryYear(value) {
+  const source = normalizeString(value).trim();
+  const match = source.match(/\b(1[5-9]\d{2}|20\d{2})\b/);
+  return match ? match[1] : '';
+}
+
+async function fetchIsbnMetadata(isbn) {
+  const normalized = normalizeString(isbn).replace(/[^0-9]/g, '').trim();
+  if (!normalized) {
+    throw new Error('ISBN obrigatorio.');
+  }
+
+  const url = openLibraryUrlForIsbn(normalized);
+  const payload = await fetchJsonByCurl(url);
+  const entry = payload?.[`ISBN:${normalized}`];
+  if (!entry || typeof entry !== 'object') {
+    throw new Error('Nao foi possivel localizar metadados para este ISBN.');
+  }
+
+  return {
+    isbn: normalized,
+    title: normalizeString(entry.title).trim(),
+    author: normalizeOpenLibraryAuthor(entry.authors),
+    year: normalizeOpenLibraryYear(entry.publish_date),
+    publisher: normalizeOpenLibraryPublisher(entry.publishers),
+    edition: normalizeString(entry.edition_name).trim(),
+    pageCount: entry.number_of_pages ? String(entry.number_of_pages) : '',
+    source: 'openlibrary',
+    raw: entry,
+  };
+}
+
 async function fetchDoiMetadata(doi) {
   const normalizedDoi = normalizeString(doi).trim();
   if (!normalizedDoi) {
@@ -548,6 +599,58 @@ app.post('/api/pdfs/:id/sync-doi-metadata', async (req, res, next) => {
         title: metadata.title,
         author: metadata.author,
         year: metadata.year,
+        source: metadata.source,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/pdfs/:id/sync-isbn-metadata', async (req, res, next) => {
+  try {
+    const doc = byId(db.pdfs, req.params.id);
+    if (!doc) {
+      res.status(404).json({ error: 'Documento nao encontrado.' });
+      return;
+    }
+
+    if (normalizeString(doc.type).trim().toLowerCase() !== 'livro') {
+      res.status(400).json({ error: 'A sincronizacao automatica por ISBN esta disponivel apenas para livros.' });
+      return;
+    }
+
+    const isbn = normalizeString(doc.isbn).replace(/[^0-9]/g, '').trim();
+    if (!isbn) {
+      res.status(400).json({ error: 'Este livro nao possui ISBN salvo.' });
+      return;
+    }
+
+    const metadata = await fetchIsbnMetadata(isbn);
+    const updated = {
+      ...doc,
+      title: metadata.title || doc.title,
+      author: metadata.author || doc.author,
+      year: metadata.year || doc.year,
+      isbn: metadata.isbn || doc.isbn,
+      publisher: metadata.publisher || doc.publisher,
+      edition: metadata.edition || doc.edition,
+      pageCount: metadata.pageCount || doc.pageCount,
+    };
+
+    upsert('pdfs', updated);
+    await saveDb();
+
+    res.json({
+      doc: updated,
+      metadata: {
+        isbn: metadata.isbn,
+        title: metadata.title,
+        author: metadata.author,
+        year: metadata.year,
+        publisher: metadata.publisher,
+        edition: metadata.edition,
+        pageCount: metadata.pageCount,
         source: metadata.source,
       },
     });

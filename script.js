@@ -216,7 +216,7 @@ const S = {
   selectedHL: null, imgMode: false,
   folders: {library: [], projects: []},
   currentFolder: {library: 'root', projects: 'root'},
-  libFilter: { tags: [], type: '', lang: '' },
+  libFilter: { tags: [], type: '', lang: '', sort: 'date-desc' },
 };
 
 function makeFolderId(scope) {
@@ -2159,6 +2159,16 @@ const Library = {
         </select>`;
     }
 
+    html += `<span class="filter-lbl" style="width:100%;margin-top:6px;">Ordenar por:</span>
+      <select class="filter-sel" onchange="Library.setSort(this.value)">
+        <option value="title-asc" ${S.libFilter.sort === 'title-asc' ? 'selected' : ''}>A-Z</option>
+        <option value="title-desc" ${S.libFilter.sort === 'title-desc' ? 'selected' : ''}>Z-A</option>
+        <option value="year-asc" ${S.libFilter.sort === 'year-asc' ? 'selected' : ''}>Ano (crescente)</option>
+        <option value="year-desc" ${S.libFilter.sort === 'year-desc' ? 'selected' : ''}>Ano (decrescente)</option>
+        <option value="date-asc" ${S.libFilter.sort === 'date-asc' ? 'selected' : ''}>Antigo → Novo</option>
+        <option value="date-desc" ${S.libFilter.sort === 'date-desc' ? 'selected' : ''}>Novo → Antigo</option>
+      </select>`;
+
     if (allLangs.length > 1) {
       html += `<span class="filter-lbl" style="margin-left:4px;">Idioma:</span>
         <select class="filter-sel" onchange="Library.setLang(this.value)">
@@ -2186,7 +2196,38 @@ const Library = {
       docs = docs.filter(d => d.type === S.libFilter.type);
     if (S.libFilter.lang)
       docs = docs.filter(d => d.lang === S.libFilter.lang);
-    return docs;
+
+    const sorted = [...docs];
+    const byTitle = (a, b) => (a.title || a.name || '').localeCompare(b.title || b.name || '', 'pt-BR');
+    const byDate = (a, b) => (Number(a.addedAt) || 0) - (Number(b.addedAt) || 0);
+    const yearVal = d => {
+      const y = parseInt(String(d.year || '').trim(), 10);
+      return Number.isFinite(y) ? y : 0;
+    };
+    const byYear = (a, b) => yearVal(a) - yearVal(b);
+
+    switch (S.libFilter.sort) {
+      case 'title-asc':
+        sorted.sort(byTitle);
+        break;
+      case 'title-desc':
+        sorted.sort((a, b) => -byTitle(a, b));
+        break;
+      case 'year-asc':
+        sorted.sort(byYear);
+        break;
+      case 'year-desc':
+        sorted.sort((a, b) => -byYear(a, b));
+        break;
+      case 'date-asc':
+        sorted.sort(byDate);
+        break;
+      case 'date-desc':
+      default:
+        sorted.sort((a, b) => -byDate(a, b));
+        break;
+    }
+    return sorted;
   },
 
   renderCurrentFolder() {
@@ -2220,7 +2261,7 @@ const Library = {
   renderGrid() {
     this.renderCurrentFolder();
 
-    const docs = this.filteredDocs().sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    const docs = this.filteredDocs();
     const currentFolderId = (S.currentFolder.library && S.currentFolder.library !== 'root')
       ? S.currentFolder.library
       : null;
@@ -2331,7 +2372,8 @@ const Library = {
   },
   setType(val) { S.libFilter.type = val; this.renderFilters(); this.renderGrid(); },
   setLang(val) { S.libFilter.lang = val; this.renderFilters(); this.renderGrid(); },
-  clearFilters() { S.libFilter = {tags: [], type: '', lang: ''}; this.renderFilters(); this.renderGrid(); },
+  setSort(val) { S.libFilter.sort = val; this.renderGrid(); },
+  clearFilters() { S.libFilter = {tags: [], type: '', lang: '', sort: S.libFilter.sort || 'date-desc'}; this.renderFilters(); this.renderGrid(); },
 
   async openById(id) {
     const doc = S.docs.find(d => d.id === id);
@@ -4110,11 +4152,33 @@ function libraryCardMeta(doc) {
       pages,
     ].filter(Boolean).join(' · ');
   }
+  if (isAcademicWorkDoc(doc)) {
+    const pages = doc.pageCount ? `${doc.pageCount}p` : null;
+    return [
+      doc.author || '—',
+      doc.year || null,
+      doc.academicSubtype || null,
+      doc.institution || null,
+      doc.program || null,
+      pages,
+    ].filter(Boolean).join(' · ');
+  }
+  if (isBookChapterDoc(doc)) {
+    return [
+      doc.author || '—',
+      doc.year || null,
+      doc.bookTitle || null,
+      doc.publisher || null,
+      doc.edition ? `${doc.edition} ed.` : null,
+      doc.pageRange || null,
+    ].filter(Boolean).join(' · ');
+  }
   if (isReportDoc(doc)) {
     return [
       doc.author || '—',
       doc.fullDate || null,
       doc.reportSubtype || null,
+      doc.institution || null,
       doc.area || null,
     ].filter(Boolean).join(' · ');
   }
@@ -4126,7 +4190,14 @@ function libraryCardMeta(doc) {
       doc.fullDate || null,
     ].filter(Boolean).join(' · ');
   }
-  return `${doc.author || '—'}${doc.year ? ' · ' + doc.year : ''}`;
+  if (isArticleDoc(doc)) {
+    return [
+      doc.author || '—',
+      doc.year || null,
+      doc.doi ? `DOI: ${doc.doi}` : null,
+    ].filter(Boolean).join(' · ');
+  }
+  return [doc.author || '—', doc.year || null].filter(Boolean).join(' · ');
 }
 function libraryCardMetaParts(doc) {
   const bits = [];

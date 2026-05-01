@@ -15,8 +15,8 @@ Sistema de abas**
 Check-Workflow - Limpar excessos e funcionamento workflow
 Colocar indices nos icones de trabalhos academicos e capitulos de livro
 ✓✓✓Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
-✓✓✓Colocar o tipo do arquivo nos icones dos arquivos (ex: artigo, livro, capitlo de livro etc)
-Back-up
+✓✓✓ Colocar o tipo do arquivo nos icones dos arquivos (ex: artigo, livro, capitlo de livro etc)
+✓✓✓ Import e Export do Back-up de dados do usuário
 
 
 PARTE 2: Complemento de ferramentas

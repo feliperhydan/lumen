@@ -1,5 +1,7 @@
 const express = require('express');
 const multer = require('multer');
+const archiver = require('archiver');
+const unzipper = require('unzipper');
 const { execFile } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
@@ -418,6 +420,11 @@ const upload = multer({
   limits: { fileSize: 1024 * 1024 * 200 },
 });
 
+const backupUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1024 * 1024 * 1024 },
+});
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static(ROOT_DIR));
 
@@ -480,6 +487,92 @@ app.get('/api/pdfs/:id/file', async (req, res, next) => {
     const fileName = doc.fileName || `${doc.id}.pdf`;
     const fullPath = path.join(PDF_DIR, fileName);
     res.sendFile(fullPath);
+  } catch (err) {
+    next(err);
+  }
+});
+
+function backupFileName() {
+  const now = new Date();
+  const stamp = now.toISOString().replace(/[:.]/g, '-');
+  return `lumen-backup-${stamp}.zip`;
+}
+
+async function copyDir(sourceDir, targetDir) {
+  await fs.mkdir(targetDir, { recursive: true });
+  const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const src = path.join(sourceDir, entry.name);
+    const dst = path.join(targetDir, entry.name);
+    if (entry.isDirectory()) {
+      await copyDir(src, dst);
+    } else if (entry.isFile()) {
+      await fs.copyFile(src, dst);
+    }
+  }
+}
+
+app.get('/api/backup/export', async (_req, res, next) => {
+  try {
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${backupFileName()}"`);
+
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    archive.on('error', (err) => {
+      next(err);
+    });
+
+    archive.pipe(res);
+    archive.file(DB_PATH, { name: 'server-data/db.json' });
+    archive.directory(PDF_DIR, 'server-data/pdfs');
+    await archive.finalize();
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/backup/import', backupUpload.single('backup'), async (req, res, next) => {
+  try {
+    if (!req.file) {
+      res.status(400).json({ error: 'Arquivo de backup obrigatorio.' });
+      return;
+    }
+
+    const opened = await unzipper.Open.buffer(req.file.buffer);
+    const tempDir = path.join(DATA_DIR, `backup_${Date.now().toString(36)}`);
+    const expectedPrefix = 'server-data/';
+    await fs.mkdir(tempDir, { recursive: true });
+
+    for (const entry of opened.files) {
+      const entryPath = entry.path.replace(/\\/g, '/');
+      if (!entryPath.startsWith(expectedPrefix)) continue;
+      if (entry.type !== 'File') continue;
+
+      const relative = entryPath.slice(expectedPrefix.length);
+      if (!relative || relative.includes('..')) continue;
+
+      const dest = path.join(tempDir, relative);
+      if (!dest.startsWith(tempDir)) continue;
+      await fs.mkdir(path.dirname(dest), { recursive: true });
+      const content = await entry.buffer();
+      await fs.writeFile(dest, content);
+    }
+
+    const tempDbPath = path.join(tempDir, 'db.json');
+    const rawDb = await fs.readFile(tempDbPath, 'utf8');
+    db = normalizeDb(JSON.parse(rawDb));
+    await saveDb();
+
+    const tempPdfDir = path.join(tempDir, 'pdfs');
+    await fs.rm(PDF_DIR, { recursive: true, force: true });
+    await fs.mkdir(PDF_DIR, { recursive: true });
+    try {
+      await copyDir(tempPdfDir, PDF_DIR);
+    } catch (_err) {}
+
+    await fs.rm(tempDir, { recursive: true, force: true });
+
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

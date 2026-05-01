@@ -2452,13 +2452,13 @@ const Library = {
       ${isArticle ? `
         <div class="meta-doi-tools">
           <button class="btn btn-sm" id="em-sync-title-btn" onclick="Library.syncTitleFromDoi('${id}')">Atualizar dados pelo DOI</button>
-          <span class="meta-doi-tip">Usa os dados do DOI para preencher tÃ­tulo, autor(es) e ano automaticamente.</span>
+          <span class="meta-doi-tip">Usa os dados do DOI para preencher tí­tulo, autor(es) e ano automaticamente.</span>
         </div>
       ` : ''}
       ${isBook ? `
         <div class="meta-doi-tools meta-isbn-tools">
           <button class="btn btn-sm" id="em-sync-isbn-btn" onclick="Library.syncMetaFromIsbn('${id}')">Atualizar dados pelo ISBN</button>
-          <span class="meta-doi-tip">Usa os dados do ISBN para preencher tÃ­tulo, autor(es), ano, editora, ediÃ§Ã£o e pÃ¡ginas.</span>
+          <span class="meta-doi-tip">Usa os dados do ISBN para preencher tí­tulo, autor(es), ano, editora, edição e páginas.</span>
         </div>
       ` : ''}
       <div class="fg">
@@ -3722,7 +3722,7 @@ const UI = {
         if (fileType === 'artigo' && detectedDoi) {
           try {
             const result = await syncDocTitleFromDoi(savedDoc);
-            if (result?.metadata?.title) toast(`"${savedDoc.title}" adicionado com DOI, tÃ­tulo, autores e ano identificados.`);
+            if (result?.metadata?.title) toast(`"${savedDoc.title}" adicionado com DOI, tí­tulo, autores e ano identificados.`);
             else toast(`"${savedDoc.title}" adicionado com DOI identificado.`);
           } catch (metaErr) {
             console.warn('Falha ao sincronizar titulo automatico pelo DOI.', metaErr);
@@ -3843,6 +3843,16 @@ const UI = {
           <button class="btn btn-sm" style="width:100%;text-align:left;" onclick="Modal.hide();UI.showCatEditor()">⊞ Configurar Categorias</button>
         </div>
       </div>
+      <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border2);">
+        <div class="fg"><label style="margin-bottom:8px;display:block;font-size:12px;color:var(--text2);font-weight:500;">Backup local</label>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="UI.downloadBackup()">⬇️ Baixar backup</button>
+            <button class="btn btn-sm" onclick="UI.promptBackupImport()">⬆️ Importar backup</button>
+          </div>
+          <input type="file" id="backup-file" accept=".zip" style="display:none;" onchange="UI.onBackupImport(event)">
+          <div class="meta-doi-tip" style="margin-top:8px;">Exporta e restaura todos os dados locais do Lumen (PDFs e metadados).</div>
+        </div>
+      </div>
       <div class="mactions"><button class="btn" onclick="Modal.hide()">Fechar</button></div>
     `);
   },
@@ -3865,6 +3875,46 @@ const UI = {
         <button class="btn btn-p" onclick="UI._saveCats()">Salvar</button>
       </div>
     `);
+  },
+
+  downloadBackup() {
+    window.location.href = '/api/backup/export';
+  },
+
+  promptBackupImport() {
+    document.getElementById('backup-file')?.click();
+  },
+
+  async onBackupImport(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!confirm('Importar backup vai substituir os dados locais atuais. Deseja continuar?')) {
+      e.target.value = '';
+      return;
+    }
+
+    const form = new FormData();
+    form.append('backup', file);
+    toast('Importando backup...');
+
+    try {
+      const res = await fetch('/api/backup/import', { method: 'POST', body: form });
+      if (!res.ok) {
+        let msg = `Erro ${res.status}`;
+        try {
+          const payload = await res.json();
+          if (payload?.error) msg = payload.error;
+        } catch (_err) {}
+        throw new Error(msg);
+      }
+      toast('Backup importado com sucesso. Recarregando...');
+      setTimeout(() => window.location.reload(), 600);
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Falha ao importar backup.');
+    } finally {
+      e.target.value = '';
+    }
   },
 
   _addCat() {

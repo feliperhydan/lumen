@@ -94,14 +94,16 @@
     </div>
 
     <!-- PROJECTS -->
-    <div class="view" id="projects-view" style="overflow-y:auto;padding:40px;">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;">
-        <h1 class="view-title">Projetos</h1>
-        <button class="btn btn-p" onclick="Proj.newProj()">+ Novo Projeto</button>
+    <div class="view" id="projects-view">
+      <div class="lib-shell">
+        <section class="lib-content-panel">
+          <div id="proj-current-folder"></div>
+          <div class="lib-grid-wrap">
+            <div id="proj-grid" class="lib-results"></div>
+            <div id="proj-empty" class="empty" style="display:none;"><h3>Nenhum projeto ainda</h3><p>Crie projetos para organizar suas sínteses.</p></div>
+          </div>
+        </section>
       </div>
-      <div class="folder-toolbar" id="proj-folder-bar" style="padding:0 0 12px 0;border-bottom:none;"></div>
-      <div id="proj-list"></div>
-      <div id="proj-empty" class="empty" style="display:none;"><h3>Nenhum projeto ainda</h3><p>Crie projetos para organizar suas sínteses.</p></div>
     </div>
 
     <!-- PROJ EDITOR -->
@@ -113,12 +115,79 @@
           <div style="flex:1;"></div>
           <button class="btn btn-p btn-sm" onclick="Proj.saveContent()">Salvar</button>
         </div>
-        <div id="proj-content"
-          contenteditable="true"
-          data-placeholder="Escreva seu projeto aqui…&#10;&#10;Use os botões 'Inserir em Projeto' nos Anexos para embedar referências visuais."
-          spellcheck="false"
-          oninput="Proj.onInput()"
-        ></div>
+        <div class="editor-toolbar" id="proj-editor-toolbar" aria-label="Barra de ferramentas do editor">
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="undo" title="Desfazer (Ctrl+Z)">↶</button>
+            <button class="toolbar-btn" data-cmd="redo" title="Refazer (Ctrl+Shift+Z)">↷</button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="paragraph" title="Parágrafo">P</button>
+            <button class="toolbar-btn" data-cmd="heading-1" title="Título 1">H1</button>
+            <button class="toolbar-btn" data-cmd="heading-2" title="Título 2">H2</button>
+            <button class="toolbar-btn" data-cmd="heading-3" title="Título 3">H3</button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="bold" title="Negrito (Ctrl+B)"><strong>B</strong></button>
+            <button class="toolbar-btn" data-cmd="italic" title="Italico (Ctrl+I)"><em>I</em></button>
+            <button class="toolbar-btn" data-cmd="underline" title="Sublinhado (Ctrl+U)"><span style="text-decoration:underline;">U</span></button>
+            <button class="toolbar-btn" data-cmd="strike" title="Tachado (Ctrl+Shift+X)"><span style="text-decoration:line-through;">S</span></button>
+            <button class="toolbar-btn" data-cmd="code" title="Codigo (Ctrl+E)">{ }</button>
+            <button class="toolbar-btn" data-cmd="code-block" title="Bloco de codigo (Ctrl+Alt+C)">&lt;/&gt;</button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="blockquote" title="Citacao (Ctrl+Shift+9)">❝</button>
+            <button class="toolbar-btn" data-cmd="bullet-list" title="Lista com marcadores (Ctrl+Shift+8)">• List</button>
+            <button class="toolbar-btn" data-cmd="ordered-list" title="Lista numerada (Ctrl+Shift+7)">1. List</button>
+            <button class="toolbar-btn" data-cmd="task-list" title="Lista de tarefas (Ctrl+Shift+L)">☑</button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="align-left" title="Alinhar a esquerda">⇤</button>
+            <button class="toolbar-btn" data-cmd="align-center" title="Centralizar">↔</button>
+            <button class="toolbar-btn" data-cmd="align-right" title="Alinhar a direita">⇥</button>
+            <button class="toolbar-btn" data-cmd="align-justify" title="Justificar">☰</button>
+          </div>
+          <div class="toolbar-group">
+            <select class="toolbar-select" data-cmd="font-family" title="Fonte">
+              <option value="">Fonte: Padrao</option>
+              <option value="Lora, serif">Lora</option>
+              <option value="Merriweather, serif">Merriweather</option>
+              <option value="'Source Serif 4', serif">Source Serif 4</option>
+              <option value="'Roboto Slab', serif">Roboto Slab</option>
+              <option value="'Playfair Display', serif">Playfair Display</option>
+              <option value="'Noto Serif', serif">Noto Serif</option>
+              <option value="'Source Sans 3', sans-serif">Source Sans 3</option>
+              <option value="Inter, sans-serif">Inter</option>
+              <option value="Montserrat, sans-serif">Montserrat</option>
+              <option value="Archivo, sans-serif">Archivo</option>
+              <option value="'Space Grotesk', sans-serif">Space Grotesk</option>
+              <option value="'Work Sans', sans-serif">Work Sans</option>
+              <option value="Nunito, sans-serif">Nunito</option>
+              <option value="'Fira Sans', sans-serif">Fira Sans</option>
+              <option value="'IBM Plex Sans', sans-serif">IBM Plex Sans</option>
+              <option value="'Fira Code', monospace">Fira Code</option>
+              <option value="'JetBrains Mono', monospace">JetBrains Mono</option>
+              <option value="'IBM Plex Mono', monospace">IBM Plex Mono</option>
+            </select>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="link" title="Inserir link (Ctrl+K)">🔗</button>
+            <button class="toolbar-btn" data-cmd="image" title="Inserir imagem">🖼</button>
+            <button class="toolbar-btn" data-cmd="highlight" title="Destacar texto (Ctrl+Shift+H)">✦</button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="hr" title="Linha divisoria">—</button>
+            <button class="toolbar-btn" data-cmd="table" title="Inserir tabela">▦</button>
+            <button class="toolbar-btn" data-cmd="add-row" title="Adicionar linha">＋ Linha</button>
+            <button class="toolbar-btn" data-cmd="add-col" title="Adicionar coluna">＋ Coluna</button>
+            <button class="toolbar-btn" data-cmd="del-row" title="Remover linha">− Linha</button>
+            <button class="toolbar-btn" data-cmd="del-col" title="Remover coluna">− Coluna</button>
+            <button class="toolbar-btn" data-cmd="del-table" title="Remover tabela">Remover tabela</button>
+          </div>
+          <div class="toolbar-group">
+            <button class="toolbar-btn" data-cmd="clear-format" title="Limpar formatacao">Limpar</button>
+          </div>
+        </div>
+        <div id="proj-content" class="tiptap-editor"></div>
       </div>
     </div>
 
@@ -204,6 +273,46 @@
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script src="script.js"></script>
+<script type="module">
+  import { Editor, Node, Extension, mergeAttributes } from 'https://esm.sh/@tiptap/core@2.11.5';
+  import StarterKit from 'https://esm.sh/@tiptap/starter-kit@2.11.5';
+  import Underline from 'https://esm.sh/@tiptap/extension-underline@2.11.5';
+  import Link from 'https://esm.sh/@tiptap/extension-link@2.11.5';
+  import Highlight from 'https://esm.sh/@tiptap/extension-highlight@2.11.5';
+  import TextStyle from 'https://esm.sh/@tiptap/extension-text-style@2.11.5';
+  import FontFamily from 'https://esm.sh/@tiptap/extension-font-family@2.11.5';
+  import TextAlign from 'https://esm.sh/@tiptap/extension-text-align@2.11.5';
+  import Placeholder from 'https://esm.sh/@tiptap/extension-placeholder@2.11.5';
+  import TaskList from 'https://esm.sh/@tiptap/extension-task-list@2.11.5';
+  import TaskItem from 'https://esm.sh/@tiptap/extension-task-item@2.11.5';
+  import Table from 'https://esm.sh/@tiptap/extension-table@2.11.5';
+  import TableRow from 'https://esm.sh/@tiptap/extension-table-row@2.11.5';
+  import TableCell from 'https://esm.sh/@tiptap/extension-table-cell@2.11.5';
+  import TableHeader from 'https://esm.sh/@tiptap/extension-table-header@2.11.5';
+  import Image from 'https://esm.sh/@tiptap/extension-image@2.11.5';
+
+  window.Tiptap = {
+    Editor,
+    Node,
+    Extension,
+    mergeAttributes,
+    StarterKit,
+    Underline,
+    Link,
+    Highlight,
+    TextStyle,
+    FontFamily,
+    TextAlign,
+    Placeholder,
+    TaskList,
+    TaskItem,
+    Table,
+    TableRow,
+    TableCell,
+    TableHeader,
+    Image,
+  };
+</script>
+<script defer src="script.js"></script>
 </body>
 </html>

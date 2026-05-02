@@ -751,78 +751,24 @@ const Folders = {
     return false;
   },
 
-  _renderTreeBranch(scope, parentId = null, depth = 1) {
-    const selectedId = S.currentFolder[this._scopeKey(scope)] || 'root';
-    let html = '';
-
-    const folders = this._folderChildren(scope, parentId);
-    folders.forEach(folder => {
-      const isActive = selectedId === folder.id;
-      const stats = this.folderStats(scope, folder.id);
-      html += `
-        <div class="folder-tree-row ${isActive ? 'active' : ''}" style="--depth:${depth}" draggable="true" onclick="Folders.setCurrent('${scope}','${folder.id}')" ondragstart="Folders.dragStart(event,'${scope}','folder','${folder.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','folder','${folder.id}')" title="${escHtml(this.path(scope, folder.id) || folder.name)}">
-          <div class="folder-tree-main">
-            <span class="folder-tree-ico">${folderIconMarkup()}</span>
-            <span class="folder-tree-name">${escHtml(folder.name)}</span>
-          </div>
-          <span class="folder-tree-meta">${stats.items} arq.</span>
-        </div>
-      `;
-
-      this._itemsInFolder(scope, folder.id).forEach(item => {
-        html += `
-          <div class="folder-tree-item" style="--depth:${depth + 1}" draggable="true" onclick="Folders.openItem('${scope}','${item.id}')" ondragstart="Folders.dragStart(event,'${scope}','item','${item.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','folder','${folder.id}')" title="${escHtml(item.name)}">
-            <div class="folder-tree-main">
-              <span class="folder-tree-ico">${item.icon}</span>
-              <span class="folder-tree-name">${escHtml(item.name)}</span>
-            </div>
-          </div>
-        `;
-      });
-
-      html += this._renderTreeBranch(scope, folder.id, depth + 1);
-    });
-
-    return html;
-  },
-
   _renderDefaultToolbar(scope) {
     const key = this._scopeKey(scope);
     const currentId = S.currentFolder[key] || 'root';
     const currentPath = currentId === 'root' ? 'Raiz' : (this.path(scope, currentId) || 'Raiz');
-    const rootItems = this._itemsInFolder(scope, null)
-      .map(item => `
-        <div class="folder-tree-item" style="--depth:1" draggable="true" onclick="Folders.openItem('${scope}','${item.id}')" ondragstart="Folders.dragStart(event,'${scope}','item','${item.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')" title="${escHtml(item.name)}">
-          <div class="folder-tree-main">
-            <span class="folder-tree-ico">${item.icon}</span>
-            <span class="folder-tree-name">${escHtml(item.name)}</span>
-          </div>
-        </div>
-      `)
-      .join('');
-    const selectedName = currentId === 'root'
-      ? 'Raiz'
-      : (this.find(scope, currentId)?.name || 'Raiz');
+
+    const label = scope === 'projects' ? '' : 'Explorador';
+    const labelMarkup = label ? `<span class="folder-toolbar-lbl">${label}</span>` : '';
 
     return `
-      <div class="folder-toolbar-row">
-        <span class="folder-toolbar-lbl">Explorador</span>
-        <button class="btn btn-sm" onclick="Folders.create('${scope}')">+ Pasta</button>
-        <button class="btn btn-sm" onclick="Folders.renameSelected('${scope}')">Renomear</button>
-        <button class="btn btn-d btn-sm" onclick="Folders.removeSelected('${scope}')">Excluir</button>
-        <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
-      </div>
-      <div class="folder-tree" data-scope="${scope}" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
-        <div class="folder-tree-row ${currentId === 'root' ? 'active' : ''}" style="--depth:0" onclick="Folders.setCurrent('${scope}','root')" ondragover="Folders.dragOver(event,'${scope}','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'${scope}','root','root')">
-          <div class="folder-tree-main">
-            <span class="folder-tree-ico">${folderIconMarkup()}</span>
-            <span class="folder-tree-name">Raiz (${escHtml(this._scopeLabel(scope))})</span>
-          </div>
+      <div class="folder-toolbar-section">
+        ${labelMarkup}
+        <div class="folder-toolbar-actions">
+          <button class="btn btn-sm" onclick="Folders.create('${scope}')">+ Pasta</button>
+          <button class="btn btn-sm" onclick="Folders.renameSelected('${scope}')">Renomear</button>
+          <button class="btn btn-d btn-sm" onclick="Folders.removeSelected('${scope}')">Excluir</button>
+          <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
         </div>
-        ${rootItems}
-        ${this._renderTreeBranch(scope, null, 1)}
       </div>
-      <div class="folder-tree-foot">Selecionado: ${escHtml(selectedName)}</div>
     `;
   },
 
@@ -835,11 +781,9 @@ const Folders = {
 
     return `
       <div class="folder-toolbar-section">
-        <div class="folder-toolbar-row">
-          <span class="folder-toolbar-lbl">Explorador da Biblioteca</span>
-          <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
-        </div>
+        <span class="folder-toolbar-lbl">Explorador da Biblioteca</span>
         <div class="folder-toolbar-actions">
+          <span class="folder-chip">Atual: ${escHtml(currentPath)}</span>
           <button class="btn btn-sm" onclick="Folders.setCurrent('library','root')">Raiz</button>
           <button class="btn btn-sm" onclick="Folders.create('library')">+ Pasta</button>
           <button class="btn btn-sm" onclick="Folders.renameSelected('library')">Renomear</button>
@@ -864,17 +808,6 @@ const Folders = {
           <span>pastas criadas</span>
         </div>
       </div>
-      <div class="folder-tree" data-scope="library" ondragover="Folders.dragOver(event,'library','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'library','root','root')">
-        <div class="folder-tree-row ${currentId === 'root' ? 'active' : ''}" style="--depth:0" onclick="Folders.setCurrent('library','root')" ondragover="Folders.dragOver(event,'library','root','root')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'library','root','root')">
-          <div class="folder-tree-main">
-            <span class="folder-tree-ico">${folderIconMarkup()}</span>
-            <span class="folder-tree-name">Biblioteca</span>
-          </div>
-          <span class="folder-tree-meta">${this._itemsInFolder('library', null).length} arq.</span>
-        </div>
-        ${this._renderTreeBranch('library', null, 1)}
-      </div>
-      <div class="folder-tree-foot">Arraste arquivos ou pastas para reorganizar.</div>
     `;
   },
 
@@ -2903,32 +2836,137 @@ const Library = {
 };
 
 /* ══════════════════════════════════════
-   PROJECTS — rich contenteditable editor
+  PROJECTS — TipTap editor
 ══════════════════════════════════════ */
 const Proj = {
   _saveTimer: null,
+  editor: null,
+  _toolbarBound: false,
+  _editorEventsBound: false,
 
   async load() {
     const allProjs = await DB.projects.all();
     S.projectItems = allProjs;
-    const projs = allProjs.filter(p => Folders.isVisible('projects', p.folderId || null));
     Folders.renderToolbar('projects');
-    const list  = document.getElementById('proj-list');
-    const empty = document.getElementById('proj-empty');
-    if (!projs.length) { list.innerHTML = ''; empty.style.display = 'block'; return; }
-    empty.style.display = 'none';
-    list.innerHTML = projs.sort((a, b) => b.updatedAt - a.updatedAt).map(p =>
-      `<div class="proj-card" draggable="true" onclick="Proj.open('${p.id}')" ondragstart="Folders.dragStart(event,'projects','item','${p.id}')" ondragend="Folders.dragEnd(event)">
-        <span style="font-size:20px;">📄</span>
-        <div style="flex:1;">
-          <div style="font-size:14px;font-weight:500;">${escHtml(p.title)}</div>
-          <div style="font-size:11px;color:var(--text3);">${new Date(p.updatedAt).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}</div>
-          <div style="font-size:11px;color:var(--text3);">${escHtml(Folders.path('projects', p.folderId) || 'Sem pasta (raiz)')}</div>
+    this.renderGrid();
+  },
+
+  renderCurrentFolder() {
+    const host = document.getElementById('proj-current-folder');
+    if (!host) return;
+
+    const currentId = S.currentFolder.projects || 'root';
+    const currentFolder = currentId === 'root' ? null : Folders.find('projects', currentId);
+    const stats = Folders.folderStats('projects', currentFolder?.id || null);
+    const currentLabel = currentFolder?.name || 'Projetos';
+    const crumbHtml = Folders.breadcrumbMarkup('projects', currentId, true);
+
+    host.innerHTML = `
+      <div class="lib-current-bar">
+        <div class="lib-current-meta">
+          <div class="lib-current-title">${escHtml(currentLabel)}</div>
+          <div class="lib-breadcrumbs">${crumbHtml}</div>
+          <div class="lib-current-sub">${stats.items} projeto(s) e ${stats.folders} subpasta(s) neste nivel.</div>
         </div>
-        <button class="btn btn-sm" onclick="event.stopPropagation();Proj.move('${p.id}')">📁</button>
-        <button class="btn btn-d btn-sm" onclick="event.stopPropagation();Proj.del('${p.id}')">✕</button>
-      </div>`
-    ).join('');
+        <div class="lib-current-actions">
+          ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.goUp('projects')">← Voltar</button>` : ''}
+          <button class="btn btn-sm" onclick="Folders.create('projects','${currentFolder?.id || 'root'}')">+ Pasta aqui</button>
+          ${currentFolder ? `<button class="btn btn-sm" onclick="Folders.rename('projects','${currentFolder.id}')">Renomear pasta</button>` : ''}
+          ${currentFolder ? `<button class="btn btn-d btn-sm" onclick="Folders.removeSelected('projects')">Excluir pasta</button>` : ''}
+          <button class="btn btn-p btn-sm" onclick="Proj.newProj()">+ Novo Projeto</button>
+        </div>
+      </div>
+    `;
+  },
+
+  renderGrid() {
+    this.renderCurrentFolder();
+
+    const currentFolderId = (S.currentFolder.projects && S.currentFolder.projects !== 'root')
+      ? S.currentFolder.projects
+      : null;
+    const childFolders = Folders._folderChildren('projects', currentFolderId);
+    const projs = (S.projectItems || [])
+      .filter(p => (p.folderId || null) === currentFolderId)
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+
+    const grid = document.getElementById('proj-grid');
+    const empty = document.getElementById('proj-empty');
+    const sections = [];
+
+    if (childFolders.length) {
+      sections.push(`
+        <section class="lib-section">
+          <div class="lib-section-head">
+            <div class="lib-section-title">Pastas</div>
+            <div class="lib-section-note">${childFolders.length} pasta(s) neste nivel</div>
+          </div>
+          <div class="folder-spot-grid">
+            ${childFolders.map(folder => {
+              const stats = Folders.folderStats('projects', folder.id);
+              const folderPath = Folders.path('projects', folder.id) || folder.name;
+              return `
+                <article class="folder-spot" draggable="true" onclick="Folders.setCurrent('projects','${folder.id}')" ondragstart="Folders.dragStart(event,'projects','folder','${folder.id}')" ondragend="Folders.dragEnd(event)" ondragover="Folders.dragOver(event,'projects','folder','${folder.id}')" ondragleave="Folders.dragLeave(event)" ondrop="Folders.drop(event,'projects','folder','${folder.id}')" title="${escHtml(folderPath)}">
+                  <div class="folder-spot-head">
+                    <span class="folder-spot-ico">${folderIconMarkup('folder-spot')}</span>
+                    <div style="min-width:0;">
+                      <div class="folder-spot-name">${escHtml(folder.name)}</div>
+                      <div class="folder-spot-path">${escHtml(folderPath)}</div>
+                    </div>
+                  </div>
+                  <div class="folder-spot-stats">
+                    <span class="folder-spot-chip">${stats.items} projeto(s)</span>
+                    <span class="folder-spot-chip">${stats.folders} subpasta(s)</span>
+                  </div>
+                </article>
+              `;
+            }).join('')}
+          </div>
+        </section>
+      `);
+    }
+
+    if (projs.length) {
+      sections.push(`
+        <section class="lib-section">
+          <div class="lib-section-head">
+            <div class="lib-section-title">Projetos</div>
+            <div class="lib-section-note">${projs.length} projeto(s) visivel(is)</div>
+          </div>
+          <div class="doc-grid">
+            ${projs.map(p => `
+              <div class="proj-card" draggable="true" onclick="Proj.open('${p.id}')" ondragstart="Folders.dragStart(event,'projects','item','${p.id}')" ondragend="Folders.dragEnd(event)">
+                <span style="font-size:20px;">📄</span>
+                <div style="flex:1;">
+                  <div style="font-size:14px;font-weight:500;">${escHtml(p.title)}</div>
+                  <div style="font-size:11px;color:var(--text3);">${new Date(p.updatedAt).toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'})}</div>
+                  <div style="font-size:11px;color:var(--text3);">${escHtml(Folders.path('projects', p.folderId) || 'Sem pasta (raiz)')}</div>
+                </div>
+                <button class="btn btn-sm" onclick="event.stopPropagation();Proj.move('${p.id}')">📁</button>
+                <button class="btn btn-d btn-sm" onclick="event.stopPropagation();Proj.del('${p.id}')">✕</button>
+              </div>
+            `).join('')}
+          </div>
+        </section>
+      `);
+    }
+
+    if (!sections.length) {
+      grid.innerHTML = '';
+      empty.style.display = 'block';
+      const projectsEmpty = !S.projectItems.length && !Folders.list('projects').length && !currentFolderId;
+      empty.innerHTML = `
+        <h3>${projectsEmpty ? 'Nenhum projeto ainda' : 'Nada nesta pasta'}</h3>
+        <p>${projectsEmpty
+          ? 'Crie projetos para organizar suas sinteses.'
+          : 'Use as acoes de pasta ou crie novos projetos para preencher este espaco.'}</p>
+      `;
+      return;
+    }
+
+    empty.style.display = 'none';
+    empty.innerHTML = `<h3>Nenhum projeto ainda</h3><p>Crie projetos para organizar suas sinteses.</p>`;
+    grid.innerHTML = sections.join('');
   },
 
   newProj() {
@@ -2985,6 +3023,595 @@ const Proj = {
     toast('Projeto movido.');
   },
 
+  _getTiptap() {
+    return window.Tiptap || null;
+  },
+
+  _buildAttachmentCardExtension(t) {
+    const { Node, mergeAttributes } = t;
+    if (!Node) return null;
+    const merge = typeof mergeAttributes === 'function'
+      ? mergeAttributes
+      : (attrs, more) => Object.assign({}, attrs || {}, more || {});
+
+    return Node.create({
+      name: 'attachmentCard',
+      group: 'block',
+      atom: true,
+      selectable: true,
+      draggable: true,
+      addAttributes() {
+        return {
+          id: { default: null },
+          pdfId: { default: '' },
+          page: { default: 0 },
+          type: { default: 'text' },
+          text: { default: '' },
+          imageData: { default: '' },
+          note: { default: '' },
+          sucoNote: { default: '' },
+          catName: { default: '' },
+          catColor: { default: '' },
+          catBg: { default: '' },
+          ref: { default: '' },
+        };
+      },
+      parseHTML() {
+        return [
+          {
+            tag: 'div.proj-att-card',
+            getAttrs: el => {
+              if (!(el instanceof HTMLElement)) return false;
+              const cardId = el.getAttribute('data-att-id') || '';
+              const pdfId = el.getAttribute('data-pdf-id') || '';
+              const page = parseInt(el.getAttribute('data-page') || '0', 10) || 0;
+              const type = el.getAttribute('data-type') || (el.querySelector('img') ? 'image' : 'text');
+              const textEl = el.querySelector('.proj-att-card-text');
+              const rawText = textEl ? textEl.textContent || '' : '';
+              const text = rawText.replace(/^"|"$/g, '').trim();
+              const imgEl = el.querySelector('.proj-att-card-img');
+              const imageData = el.getAttribute('data-image') || imgEl?.getAttribute('src') || '';
+              const note = el.getAttribute('data-note') || '';
+              const sucoNote = el.getAttribute('data-suco-note') || '';
+              const catName = el.getAttribute('data-cat-name') || el.querySelector('.cat-badge')?.textContent?.trim() || '';
+              const catColor = el.getAttribute('data-cat-color') || el.querySelector('.cat-badge')?.style?.color || '';
+              const catBg = el.getAttribute('data-cat-bg') || el.querySelector('.cat-badge')?.style?.background || '';
+              const ref = el.getAttribute('data-ref') || '';
+              let resolvedNote = note;
+              let resolvedSuco = sucoNote;
+              if (!resolvedNote || !resolvedSuco) {
+                const notes = Array.from(el.querySelectorAll('.proj-att-card-note')).map(n => (n.textContent || '').trim());
+                if (!resolvedNote) {
+                  const n = notes.find(x => x.startsWith('📝')) || '';
+                  resolvedNote = n.replace('📝', '').trim();
+                }
+                if (!resolvedSuco) {
+                  const s = notes.find(x => x.startsWith('✍')) || '';
+                  resolvedSuco = s.replace('✍', '').trim();
+                }
+              }
+              return {
+                id: cardId || null,
+                pdfId,
+                page,
+                type,
+                text,
+                imageData,
+                note: resolvedNote,
+                sucoNote: resolvedSuco,
+                catName,
+                catColor,
+                catBg,
+                ref,
+              };
+            },
+          },
+        ];
+      },
+      renderHTML({ HTMLAttributes }) {
+        const attrs = HTMLAttributes || {};
+        const type = attrs.type || 'text';
+        const note = (attrs.note || '').trim();
+        const sucoNote = (attrs.sucoNote || '').trim();
+        const cardAttrs = merge(attrs, {
+          class: 'proj-att-card',
+          contenteditable: 'false',
+          'data-att-id': attrs.id || '',
+          'data-pdf-id': attrs.pdfId || '',
+          'data-page': attrs.page || 0,
+          'data-type': attrs.type || 'text',
+          'data-image': attrs.imageData || '',
+          'data-note': note,
+          'data-suco-note': sucoNote,
+          'data-cat-name': attrs.catName || '',
+          'data-cat-color': attrs.catColor || '',
+          'data-cat-bg': attrs.catBg || '',
+          'data-ref': attrs.ref || '',
+          style: `border-left-color:${attrs.catColor || '#888'};`,
+        });
+
+        const body = type === 'image' && attrs.imageData
+          ? ['img', { class: 'proj-att-card-img', src: attrs.imageData, alt: `Imagem p.${attrs.page || 0}` }]
+          : ['div', { class: 'proj-att-card-text' }, `"${attrs.text || ''}"`];
+
+        const meta = [
+          'div',
+          { class: 'proj-att-card-meta' },
+          ['span', { class: 'cat-badge', style: `background:${attrs.catBg || 'rgba(0,0,0,.08)'};color:${attrs.catColor || '#555'};` }, attrs.catName || 'Categoria'],
+          ...(attrs.ref ? [['span', {}, attrs.ref]] : []),
+          ['span', {}, `p. ${attrs.page || 0}`],
+          ['div', { class: 'proj-att-card-actions' },
+            ['button', { class: 'proj-att-card-up', title: 'Mover para cima' }, '↑'],
+            ['button', { class: 'proj-att-card-dn', title: 'Mover para baixo' }, '↓'],
+            ['button', { class: 'proj-att-card-del', title: 'Remover do projeto' }, '✕'],
+          ],
+        ];
+
+        const nodes = [
+          body,
+          ...(note ? [['div', { class: 'proj-att-card-note' }, `📝 ${note}`]] : []),
+          ...(sucoNote ? [['div', { class: 'proj-att-card-note' }, `✍ ${sucoNote}`]] : []),
+          meta,
+        ];
+
+        return ['div', cardAttrs, ...nodes];
+      },
+    });
+  },
+
+  _buildPageBreakExtension(t) {
+    const { Node, mergeAttributes } = t;
+    if (!Node) return null;
+    const merge = typeof mergeAttributes === 'function'
+      ? mergeAttributes
+      : (attrs, more) => Object.assign({}, attrs || {}, more || {});
+
+    return Node.create({
+      name: 'pageBreak',
+      group: 'block',
+      atom: true,
+      selectable: false,
+      addAttributes() {
+        return {
+          label: { default: 'Pagina' },
+        };
+      },
+      parseHTML() {
+        return [
+          {
+            tag: 'div.page-break-marker',
+            getAttrs: el => {
+              if (!(el instanceof HTMLElement)) return false;
+              const label = el.querySelector('.pbm-label')?.textContent?.trim() || 'Pagina';
+              return { label };
+            },
+          },
+        ];
+      },
+      renderHTML({ HTMLAttributes }) {
+        const attrs = HTMLAttributes || {};
+        return [
+          'div',
+          merge(attrs, { class: 'page-break-marker', contenteditable: 'false' }),
+          ['span', { class: 'pbm-label' }, attrs.label || 'Pagina'],
+        ];
+      },
+    });
+  },
+
+  _buildShortcutExtension(t) {
+    if (!t?.Extension) return null;
+    return t.Extension.create({
+      name: 'lumenShortcuts',
+      addKeyboardShortcuts() {
+        return {
+          'Mod-z': () => this.editor.commands.undo(),
+          'Mod-Shift-z': () => this.editor.commands.redo(),
+          'Mod-b': () => this.editor.commands.toggleBold(),
+          'Mod-i': () => this.editor.commands.toggleItalic(),
+          'Mod-u': () => this.editor.commands.toggleUnderline(),
+          'Mod-Shift-x': () => this.editor.commands.toggleStrike(),
+          'Mod-e': () => this.editor.commands.toggleCode(),
+          'Mod-Alt-c': () => this.editor.commands.toggleCodeBlock(),
+          'Mod-Shift-9': () => this.editor.commands.toggleBlockquote(),
+          'Mod-Shift-8': () => this.editor.commands.toggleBulletList(),
+          'Mod-Shift-7': () => this.editor.commands.toggleOrderedList(),
+          'Mod-Shift-l': () => this.editor.commands.toggleTaskList(),
+          'Mod-k': () => {
+            const prevUrl = this.editor.getAttributes('link').href || '';
+            const url = prompt('URL do link:', prevUrl);
+            if (url === null) return true;
+            if (!url.trim()) {
+              this.editor.commands.unsetLink();
+              return true;
+            }
+            this.editor.commands.setLink({ href: url.trim() });
+            return true;
+          },
+          'Mod-Shift-h': () => this.editor.commands.toggleHighlight(),
+        };
+      },
+    });
+  },
+
+  async _ensureEditor() {
+    if (this.editor) return this.editor;
+    const t = this._getTiptap();
+    if (!t || !t.Editor) return null;
+
+    const host = document.getElementById('proj-content');
+    if (!host) return null;
+
+    const AttachmentCard = this._buildAttachmentCardExtension(t);
+    const PageBreak = this._buildPageBreakExtension(t);
+    const Shortcuts = this._buildShortcutExtension(t);
+    const extensions = [
+      t.StarterKit,
+      t.TextStyle,
+      t.FontFamily,
+      t.Underline,
+      t.Link.configure({ openOnClick: false, autolink: true, linkOnPaste: true }),
+      t.Highlight,
+      t.TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      t.Placeholder.configure({
+        placeholder: 'Escreva seu projeto aqui...\n\nUse os botoes "Inserir em Projeto" nos Anexos para embutir referencias visuais.',
+      }),
+      t.TaskList,
+      t.TaskItem.configure({ nested: true }),
+      t.Table.configure({ resizable: true }),
+      t.TableRow,
+      t.TableHeader,
+      t.TableCell,
+      t.Image,
+    ];
+    if (Shortcuts) extensions.unshift(Shortcuts);
+    if (AttachmentCard) extensions.push(AttachmentCard);
+    if (PageBreak) extensions.push(PageBreak);
+
+    this.editor = new t.Editor({
+      element: host,
+      extensions,
+      content: '',
+      autofocus: false,
+      onUpdate: () => this.onInput(),
+      onSelectionUpdate: () => this._syncToolbar(),
+    });
+
+    this._bindToolbar();
+    this._bindEditorInteractions();
+    return this.editor;
+  },
+
+  _bindToolbar() {
+    if (this._toolbarBound) return;
+    const toolbar = document.getElementById('proj-editor-toolbar');
+    if (!toolbar) return;
+    toolbar.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-cmd]');
+      if (!btn || !this.editor) return;
+      const cmd = btn.getAttribute('data-cmd');
+      this._runCommand(cmd);
+    });
+    toolbar.addEventListener('change', (e) => {
+      const select = e.target.closest('select[data-cmd]');
+      if (!select || !this.editor) return;
+      const cmd = select.getAttribute('data-cmd');
+      this._runCommand(cmd, select.value);
+    });
+    this._toolbarBound = true;
+  },
+
+  _syncToolbar() {
+    if (!this.editor) return;
+    const toolbar = document.getElementById('proj-editor-toolbar');
+    if (!toolbar) return;
+    const editor = this.editor;
+    const toggle = (cmd, active) => {
+      const btn = toolbar.querySelector(`button[data-cmd="${cmd}"]`);
+      if (!btn) return;
+      btn.classList.toggle('is-active', Boolean(active));
+    };
+    toggle('bold', editor.isActive('bold'));
+    toggle('italic', editor.isActive('italic'));
+    toggle('underline', editor.isActive('underline'));
+    toggle('strike', editor.isActive('strike'));
+    toggle('code', editor.isActive('code'));
+    toggle('code-block', editor.isActive('codeBlock'));
+    toggle('blockquote', editor.isActive('blockquote'));
+    toggle('bullet-list', editor.isActive('bulletList'));
+    toggle('ordered-list', editor.isActive('orderedList'));
+    toggle('task-list', editor.isActive('taskList'));
+    toggle('heading-1', editor.isActive('heading', { level: 1 }));
+    toggle('heading-2', editor.isActive('heading', { level: 2 }));
+    toggle('heading-3', editor.isActive('heading', { level: 3 }));
+    toggle('align-left', editor.isActive({ textAlign: 'left' }));
+    toggle('align-center', editor.isActive({ textAlign: 'center' }));
+    toggle('align-right', editor.isActive({ textAlign: 'right' }));
+    toggle('align-justify', editor.isActive({ textAlign: 'justify' }));
+    toggle('highlight', editor.isActive('highlight'));
+
+    const fontSelect = toolbar.querySelector('select[data-cmd="font-family"]');
+    if (fontSelect) {
+      const currentFont = editor.getAttributes('textStyle')?.fontFamily || '';
+      if (fontSelect.value !== currentFont) fontSelect.value = currentFont;
+    }
+
+    const undoBtn = toolbar.querySelector('button[data-cmd="undo"]');
+    const redoBtn = toolbar.querySelector('button[data-cmd="redo"]');
+    if (undoBtn) undoBtn.disabled = !editor.can().undo();
+    if (redoBtn) redoBtn.disabled = !editor.can().redo();
+  },
+
+  _runCommand(cmd, value = '') {
+    if (!this.editor) return;
+    const editor = this.editor;
+    switch (cmd) {
+      case 'undo':
+        editor.chain().focus().undo().run();
+        break;
+      case 'redo':
+        editor.chain().focus().redo().run();
+        break;
+      case 'paragraph':
+        editor.chain().focus().setParagraph().run();
+        break;
+      case 'heading-1':
+        editor.chain().focus().toggleHeading({ level: 1 }).run();
+        break;
+      case 'heading-2':
+        editor.chain().focus().toggleHeading({ level: 2 }).run();
+        break;
+      case 'heading-3':
+        editor.chain().focus().toggleHeading({ level: 3 }).run();
+        break;
+      case 'bold':
+        editor.chain().focus().toggleBold().run();
+        break;
+      case 'italic':
+        editor.chain().focus().toggleItalic().run();
+        break;
+      case 'underline':
+        editor.chain().focus().toggleUnderline().run();
+        break;
+      case 'strike':
+        editor.chain().focus().toggleStrike().run();
+        break;
+      case 'code':
+        editor.chain().focus().toggleCode().run();
+        break;
+      case 'code-block':
+        editor.chain().focus().toggleCodeBlock().run();
+        break;
+      case 'blockquote':
+        editor.chain().focus().toggleBlockquote().run();
+        break;
+      case 'bullet-list':
+        editor.chain().focus().toggleBulletList().run();
+        break;
+      case 'ordered-list':
+        editor.chain().focus().toggleOrderedList().run();
+        break;
+      case 'task-list':
+        editor.chain().focus().toggleTaskList().run();
+        break;
+      case 'align-left':
+        editor.chain().focus().setTextAlign('left').run();
+        break;
+      case 'align-center':
+        editor.chain().focus().setTextAlign('center').run();
+        break;
+      case 'align-right':
+        editor.chain().focus().setTextAlign('right').run();
+        break;
+      case 'align-justify':
+        editor.chain().focus().setTextAlign('justify').run();
+        break;
+      case 'highlight':
+        editor.chain().focus().toggleHighlight().run();
+        break;
+      case 'font-family':
+        if (!value) {
+          editor.chain().focus().unsetFontFamily().run();
+        } else {
+          editor.chain().focus().setFontFamily(value).run();
+        }
+        break;
+      case 'link': {
+        const prevUrl = editor.getAttributes('link').href || '';
+        const url = prompt('URL do link:', prevUrl);
+        if (url === null) return;
+        if (!url.trim()) {
+          editor.chain().focus().extendMarkRange('link').unsetLink().run();
+          return;
+        }
+        editor.chain().focus().extendMarkRange('link').setLink({ href: url.trim() }).run();
+        break;
+      }
+      case 'image': {
+        const src = prompt('URL da imagem:');
+        if (!src) return;
+        editor.chain().focus().setImage({ src: src.trim() }).run();
+        break;
+      }
+      case 'hr':
+        editor.chain().focus().setHorizontalRule().run();
+        break;
+      case 'table':
+        editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+        break;
+      case 'add-row':
+        editor.chain().focus().addRowAfter().run();
+        break;
+      case 'add-col':
+        editor.chain().focus().addColumnAfter().run();
+        break;
+      case 'del-row':
+        editor.chain().focus().deleteRow().run();
+        break;
+      case 'del-col':
+        editor.chain().focus().deleteColumn().run();
+        break;
+      case 'del-table':
+        editor.chain().focus().deleteTable().run();
+        break;
+      case 'clear-format':
+        editor.chain().focus().unsetAllMarks().clearNodes().run();
+        break;
+      default:
+        break;
+    }
+    this._syncToolbar();
+  },
+
+  _bindEditorInteractions() {
+    if (this._editorEventsBound || !this.editor) return;
+    const root = this.editor.view.dom;
+    root.addEventListener('click', (e) => {
+      const card = e.target.closest('.proj-att-card');
+      if (!card) return;
+
+      const isDel = e.target.closest('.proj-att-card-del');
+      const isUp = e.target.closest('.proj-att-card-up');
+      const isDn = e.target.closest('.proj-att-card-dn');
+      const cardId = card.getAttribute('data-att-id') || '';
+
+      if (isDel) {
+        e.preventDefault();
+        this._deleteCard(cardId);
+        return;
+      }
+      if (isUp) {
+        e.preventDefault();
+        this._moveCard(cardId, 'up');
+        return;
+      }
+      if (isDn) {
+        e.preventDefault();
+        this._moveCard(cardId, 'down');
+        return;
+      }
+
+      const pdfId = card.getAttribute('data-pdf-id');
+      const page = parseInt(card.getAttribute('data-page') || '0', 10);
+      if (pdfId && page) {
+        const doc = S.docs.find(d => d.id === pdfId);
+        if (doc) Library.open(doc).then(() => setTimeout(() => PV.go(page), 600));
+      }
+    });
+    this._editorEventsBound = true;
+  },
+
+  _findCardNode(cardId) {
+    if (!this.editor || !cardId) return null;
+    let found = null;
+    this.editor.state.doc.descendants((node, pos) => {
+      if (node.type?.name === 'attachmentCard' && node.attrs?.id === cardId) {
+        found = { node, pos };
+        return false;
+      }
+      return true;
+    });
+    return found;
+  },
+
+  _moveCard(cardId, dir) {
+    if (!this.editor || !cardId) return;
+    const matches = [];
+    this.editor.state.doc.descendants((node, pos) => {
+      if (node.type?.name === 'attachmentCard') {
+        matches.push({ node, pos, id: node.attrs?.id || '' });
+      }
+      return true;
+    });
+    const idx = matches.findIndex(item => item.id === cardId);
+    if (idx < 0) return;
+    const targetIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (targetIdx < 0 || targetIdx >= matches.length) return;
+
+    const cur = matches[idx];
+    const target = matches[targetIdx];
+    const tr = this.editor.state.tr;
+
+    if (dir === 'up') {
+      tr.delete(cur.pos, cur.pos + cur.node.nodeSize);
+      tr.insert(target.pos, cur.node);
+    } else {
+      const insertPos = target.pos + target.node.nodeSize;
+      tr.delete(cur.pos, cur.pos + cur.node.nodeSize);
+      const adjustedPos = insertPos > cur.pos ? insertPos - cur.node.nodeSize : insertPos;
+      tr.insert(adjustedPos, cur.node);
+    }
+
+    this.editor.view.dispatch(tr.scrollIntoView());
+    this.scheduleSave();
+  },
+
+  _deleteCard(cardId) {
+    if (!this.editor || !cardId) return;
+    const hit = this._findCardNode(cardId);
+    if (!hit) return;
+    const tr = this.editor.state.tr.delete(hit.pos, hit.pos + hit.node.nodeSize);
+    this.editor.view.dispatch(tr.scrollIntoView());
+    this.scheduleSave();
+  },
+
+  buildAttAttrs(a, c, ref) {
+    const isImg = a.type === 'image';
+    const note = (a.note || '').trim();
+    const sucoNote = (a.sucoNote || '').trim();
+    const id = String(a.id || `att_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`);
+    return {
+      id,
+      pdfId: a.pdfId || '',
+      page: a.page || 0,
+      type: isImg ? 'image' : 'text',
+      text: a.text || '',
+      imageData: a.imageData || '',
+      note,
+      sucoNote,
+      catName: c?.name || '',
+      catColor: c?.color || '',
+      catBg: c?.bg || '',
+      ref: ref || '',
+    };
+  },
+
+  buildAttCard(a, c, ref) {
+    const attrs = this.buildAttAttrs(a, c, ref);
+    const note = attrs.note;
+    const sucoNote = attrs.sucoNote;
+    return `<div class="proj-att-card" contenteditable="false"
+      data-att-id="${escHtml(attrs.id)}"
+      data-pdf-id="${escHtml(attrs.pdfId)}"
+      data-page="${attrs.page}"
+      data-type="${escHtml(attrs.type)}"
+      data-image="${escHtml(attrs.imageData)}"
+      data-note="${escHtml(note)}"
+      data-suco-note="${escHtml(sucoNote)}"
+      data-cat-name="${escHtml(attrs.catName)}"
+      data-cat-color="${escHtml(attrs.catColor)}"
+      data-cat-bg="${escHtml(attrs.catBg)}"
+      data-ref="${escHtml(attrs.ref)}"
+      style="border-left-color:${attrs.catColor || '#888'};">
+      ${attrs.type === 'image'
+        ? `<img class="proj-att-card-img" src="${escHtml(attrs.imageData || '')}" alt="Imagem p.${attrs.page}">`
+        : `<div class="proj-att-card-text">"${escHtml(attrs.text || '')}"</div>`
+      }
+      ${note ? `<div class="proj-att-card-note">📝 ${escHtml(note)}</div>` : ''}
+      ${sucoNote ? `<div class="proj-att-card-note">✍ ${escHtml(sucoNote)}</div>` : ''}
+      <div class="proj-att-card-meta">
+        <span class="cat-badge" style="background:${attrs.catBg};color:${attrs.catColor};">${escHtml(attrs.catName)}</span>
+        ${attrs.ref ? `<span>${escHtml(attrs.ref)}</span>` : ''}
+        <span>p. ${attrs.page}</span>
+        <div class="proj-att-card-actions">
+          <button class="proj-att-card-up" title="Mover para cima">↑</button>
+          <button class="proj-att-card-dn" title="Mover para baixo">↓</button>
+          <button class="proj-att-card-del" title="Remover do projeto">✕</button>
+        </div>
+      </div>
+    </div>`;
+  },
+
   async open(id, options = {}) {
     const p = typeof id === 'string' ? await DB.projects.get(id) : id;
     if (!p) return;
@@ -2994,12 +3621,18 @@ const Proj = {
     S.openProjId = p.id;
     document.getElementById('proj-edit-title').textContent = p.title;
 
-    // Deserialize stored HTML into the editor
-    const editor = document.getElementById('proj-content');
-    editor.innerHTML = p.content || '';
-
-    // Re-attach click handlers to any embedded att cards
-    this._reattachCards(editor);
+    const editor = await this._ensureEditor();
+    if (editor) {
+      editor.commands.setContent(p.content || '', false);
+      this._syncToolbar();
+    } else {
+      const fallback = document.getElementById('proj-content');
+      if (fallback) {
+        fallback.setAttribute('contenteditable', 'true');
+        fallback.innerHTML = p.content || '';
+        fallback.oninput = () => this.onInput();
+      }
+    }
 
     const views = ['library-view','reader-view','suco-view','projects-view','proj-editor-view','attachments-view','search-view'];
     views.forEach(v => document.getElementById(v)?.classList.toggle('active', v === 'proj-editor-view'));
@@ -3007,87 +3640,17 @@ const Proj = {
     document.querySelectorAll('[id^="snav-"]').forEach(e => e.classList.remove('active'));
     document.getElementById('snav-projects').classList.add('active');
 
-    // Add page-break button to editor bar (once)
     const editorBar = document.querySelector('.editor-bar');
     if (editorBar && !editorBar.querySelector('.page-break-btn')) {
       const pbBtn = document.createElement('button');
       pbBtn.className = 'btn btn-sm page-break-btn';
-      pbBtn.textContent = '↓ Nova Página';
-      pbBtn.title = 'Inserir quebra de página na posição do cursor';
+      pbBtn.textContent = '↓ Nova Pagina';
+      pbBtn.title = 'Inserir quebra de pagina na posicao do cursor';
       pbBtn.onclick = () => Proj.insertPageBreak();
       const saveBtn = editorBar.querySelector('.btn-p');
       if (saveBtn) editorBar.insertBefore(pbBtn, saveBtn);
       else editorBar.appendChild(pbBtn);
     }
-  },
-
-  _reattachCards(editor) {
-    editor.querySelectorAll('.proj-att-card').forEach(card => {
-      card.setAttribute('contenteditable', 'false');
-      card.onclick = (e) => {
-        if (e.target.classList.contains('proj-att-card-del') ||
-            e.target.classList.contains('proj-att-card-up')  ||
-            e.target.classList.contains('proj-att-card-dn'))  return;
-        const pdfId = card.dataset.pdfId;
-        const page  = parseInt(card.dataset.page, 10);
-        if (pdfId && page) {
-          const doc = S.docs.find(d => d.id === pdfId);
-          if (doc) Library.open(doc).then(() => setTimeout(() => PV.go(page), 600));
-        }
-      };
-      // Delete
-      const delBtn = card.querySelector('.proj-att-card-del');
-      if (delBtn) {
-        delBtn.onclick = (e) => { e.stopPropagation(); card.remove(); this.scheduleSave(); };
-      }
-      // Move up
-      const upBtn = card.querySelector('.proj-att-card-up');
-      if (upBtn) {
-        upBtn.onclick = (e) => {
-          e.stopPropagation();
-          let prev = card.previousElementSibling;
-          while (prev && prev.tagName === 'P' && !prev.textContent.trim()) prev = prev.previousElementSibling;
-          if (prev) { card.parentNode.insertBefore(card, prev); this.scheduleSave(); }
-        };
-      }
-      // Move down
-      const dnBtn = card.querySelector('.proj-att-card-dn');
-      if (dnBtn) {
-        dnBtn.onclick = (e) => {
-          e.stopPropagation();
-          let next = card.nextElementSibling;
-          while (next && next.tagName === 'P' && !next.textContent.trim()) next = next.nextElementSibling;
-          if (next) { card.parentNode.insertBefore(next, card); this.scheduleSave(); }
-        };
-      }
-    });
-  },
-
-  buildAttCard(a, c, ref) {
-    const isImg = a.type === 'image';
-    const note = (a.note || '').trim();
-    const sucoNote = (a.sucoNote || '').trim();
-    return `<div class="proj-att-card" contenteditable="false"
-      data-pdf-id="${escHtml(a.pdfId)}"
-      data-page="${a.page}"
-      style="border-left-color:${c.color};">
-      ${isImg
-        ? `<img class="proj-att-card-img" src="${escHtml(a.imageData||'')}" alt="Imagem p.${a.page}">`
-        : `<div class="proj-att-card-text">"${escHtml(a.text||'')}"</div>`
-      }
-      ${note ? `<div class="proj-att-card-note">📝 ${escHtml(note)}</div>` : ''}
-      ${sucoNote ? `<div class="proj-att-card-note">✍ ${escHtml(sucoNote)}</div>` : ''}
-      <div class="proj-att-card-meta">
-        <span class="cat-badge" style="background:${c.bg};color:${c.color};">${escHtml(c.name)}</span>
-        ${ref ? `<span>${escHtml(ref)}</span>` : ''}
-        <span>p. ${a.page}</span>
-        <div class="proj-att-card-actions">
-          <button class="proj-att-card-up" title="Mover para cima">↑</button>
-          <button class="proj-att-card-dn" title="Mover para baixo">↓</button>
-          <button class="proj-att-card-del" title="Remover do projeto">✕</button>
-        </div>
-      </div>
-    </div>`;
   },
 
   onInput() {
@@ -3103,27 +3666,43 @@ const Proj = {
     if (!S.openProjId) return;
     const p = await DB.projects.get(S.openProjId);
     if (!p) return;
-    const editor = document.getElementById('proj-content');
-    p.content = editor ? editor.innerHTML : '';
+    if (this.editor) {
+      p.content = this.editor.getHTML();
+    } else {
+      const editor = document.getElementById('proj-content');
+      p.content = editor ? editor.innerHTML : '';
+    }
     p.updatedAt = Date.now();
     await DB.projects.save(p);
   },
 
   insertPageBreak() {
+    if (this.editor) {
+      const breaks = [];
+      this.editor.state.doc.descendants((node) => {
+        if (node.type?.name === 'pageBreak') breaks.push(node);
+        return true;
+      });
+      const pageNum = breaks.length + 2;
+      this.editor.chain().focus().insertContent([
+        { type: 'pageBreak', attrs: { label: `Pagina ${pageNum}` } },
+        { type: 'paragraph' },
+      ]).run();
+      this.scheduleSave();
+      toast('Quebra de pagina inserida.');
+      return;
+    }
+
     const editor = document.getElementById('proj-content');
     if (!editor) return;
-
     const breaks = editor.querySelectorAll('.page-break-marker');
     const pageNum = breaks.length + 2;
-
     const sep1 = document.createElement('p');
     sep1.innerHTML = '<br>';
-
     const marker = document.createElement('div');
     marker.className = 'page-break-marker';
     marker.setAttribute('contenteditable', 'false');
-    marker.innerHTML = `<span class="pbm-label">Página ${pageNum}</span>`;
-
+    marker.innerHTML = `<span class="pbm-label">Pagina ${pageNum}</span>`;
     const sep2 = document.createElement('p');
     sep2.innerHTML = '<br>';
 
@@ -3139,16 +3718,8 @@ const Proj = {
       editor.appendChild(marker);
       editor.appendChild(sep2);
     }
-
-    const newRange = document.createRange();
-    newRange.setStartAfter(sep2);
-    newRange.collapse(true);
-    const sel2 = window.getSelection();
-    sel2.removeAllRanges();
-    sel2.addRange(newRange);
-    editor.focus();
     this.scheduleSave();
-    toast('Quebra de página inserida.');
+    toast('Quebra de pagina inserida.');
   },
 
   async del(id) {
@@ -3164,8 +3735,12 @@ setInterval(async () => {
   if (S.openProjId && document.getElementById('proj-editor-view').classList.contains('active')) {
     const p = await DB.projects.get(S.openProjId);
     if (p) {
-      const editor = document.getElementById('proj-content');
-      p.content = editor ? editor.innerHTML : p.content;
+      if (Proj.editor) {
+        p.content = Proj.editor.getHTML();
+      } else {
+        const editor = document.getElementById('proj-content');
+        p.content = editor ? editor.innerHTML : p.content;
+      }
       p.updatedAt = Date.now();
       await DB.projects.save(p);
     }
@@ -3349,19 +3924,29 @@ const Attachments = {
     const ref  = [a.reference?.author, a.reference?.year].filter(Boolean).join(', ')
                + (a.reference?.doi ? ` | DOI: ${a.reference.doi}` : '');
 
-    // Build card HTML that will be stored inside the project content
-    const card = Proj.buildAttCard(a, c, ref);
+    const cardAttrs = Proj.buildAttAttrs(a, c, ref);
 
     // Open the project editor
     await Proj.open(proj.id);
     UI.nav('proj-editor');
 
-    // Append the card into the contenteditable
+    // Append the card into the editor
     setTimeout(() => {
+      if (Proj.editor) {
+        Proj.editor.chain().focus().insertContent([
+          { type: 'paragraph' },
+          { type: 'attachmentCard', attrs: cardAttrs },
+          { type: 'paragraph' },
+        ]).run();
+        Proj.scheduleSave();
+        toast(`Highlight inserido em "${proj.title}"`);
+        return;
+      }
+
       const editor = document.getElementById('proj-content');
       if (!editor) return;
+      const card = Proj.buildAttCard(a, c, ref);
 
-      // Insert a paragraph separator then the card
       const sep = document.createElement('p');
       sep.innerHTML = '<br>';
       editor.appendChild(sep);
@@ -3375,16 +3960,7 @@ const Attachments = {
       sep2.innerHTML = '<br>';
       editor.appendChild(sep2);
 
-      // Move cursor after inserted card
-      const range = document.createRange();
-      range.setStartAfter(sep2);
-      range.collapse(true);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(range);
-
       editor.scrollTop = editor.scrollHeight;
-      Proj._reattachCards(editor);
       Proj.scheduleSave();
       toast(`Highlight inserido em "${proj.title}"`);
     }, 150);
@@ -3470,17 +4046,116 @@ const Search = {
     ]);
     const docMap = Object.fromEntries(allDocs.map(d => [d.id, d]));
 
-    const hlHits   = allHLs.filter(h => h.text.toLowerCase().includes(q) || (h.note && h.note.toLowerCase().includes(q)));
-    const projHits = allProjs.filter(p => p.title.toLowerCase().includes(q) || (p.content && p.content.toLowerCase().includes(q)));
-    const attHits  = allAtts.filter(a => a.text.toLowerCase().includes(q) || (a.note && a.note.toLowerCase().includes(q)));
+    const hlHits   = allHLs.filter(h =>
+      (h.text && h.text.toLowerCase().includes(q)) ||
+      (h.note && h.note.toLowerCase().includes(q)) ||
+      (h.sucoNote && h.sucoNote.toLowerCase().includes(q))
+    );
+    const projHits = allProjs.filter(p =>
+      (p.title && p.title.toLowerCase().includes(q)) ||
+      (p.content && p.content.toLowerCase().includes(q))
+    );
+    const attHits  = allAtts.filter(a =>
+      (a.text && a.text.toLowerCase().includes(q)) ||
+      (a.note && a.note.toLowerCase().includes(q))
+    );
+    const docHits = allDocs.filter(d => {
+      const tags = Array.isArray(d.tags) ? d.tags.join(' ') : '';
+      const hay = [
+        d.title, d.name, d.author, d.year, d.type, d.lang,
+        d.doi, d.isbn, d.publisher, d.edition, d.pageCount,
+        d.academicSubtype, d.institution, d.program, d.advisor, d.coadvisor,
+        d.bookTitle, d.pageRange, d.reportSubtype, d.responsible, d.fullDate,
+        d.methodology, d.results, d.area, d.otherSubtype, d.source, d.context,
+        d.description, tags,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+    const folderHits = {
+      library: (S.folders.library || []).filter(f => {
+        const path = Folders.path('library', f.id) || f.name || '';
+        return `${f.name} ${path}`.toLowerCase().includes(q);
+      }),
+      projects: (S.folders.projects || []).filter(f => {
+        const path = Folders.path('projects', f.id) || f.name || '';
+        return `${f.name} ${path}`.toLowerCase().includes(q);
+      }),
+    };
 
-    if (!hlHits.length && !projHits.length && !attHits.length) {
+    if (!hlHits.length && !projHits.length && !attHits.length && !docHits.length && !folderHits.library.length && !folderHits.projects.length) {
       res.innerHTML = '<p style="color:var(--text3);font-size:14px;">Nenhum resultado encontrado.</p>';
       return;
     }
 
     let html = '';
     const sect = (title, cnt) => `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);font-weight:600;margin:18px 0 10px;">${title} (${cnt})</div>`;
+
+    if (docHits.length) {
+      html += sect('Documentos', docHits.length);
+      html += `<div class="doc-grid">
+        ${docHits.map(d => {
+          const meta = libraryCardMeta(d) || 'Sem metadados principais';
+          return `
+            <article class="doc-card" draggable="true" onclick="Library.openById('${d.id}')" ondragstart="Folders.dragStart(event,'library','item','${d.id}')" ondragend="Folders.dragEnd(event)">
+              <div class="doc-head">
+                <div class="doc-icon">${docTypeIconMarkup(d, 'card')}</div>
+                <div class="doc-head-main">
+                  <div class="doc-title">${escHtml(d.title || d.name)}</div>
+                  <div class="doc-author">${escHtml(meta)}</div>
+                </div>
+              </div>
+              ${d.tags?.length ? `<div class="doc-tags">${d.tags.map(t => `<span class="doc-tag">${escHtml(t)}</span>`).join('')}</div>` : ''}
+              <button class="doc-edit" onclick="event.stopPropagation();Library.editMeta('${d.id}')">✏</button>
+            </article>
+          `;
+        }).join('')}
+      </div>`;
+    }
+
+    if (folderHits.library.length || folderHits.projects.length) {
+      const total = folderHits.library.length + folderHits.projects.length;
+      html += sect('Pastas', total);
+      html += `<div class="folder-spot-grid">`;
+      html += folderHits.library.map(folder => {
+        const stats = Folders.folderStats('library', folder.id);
+        const path = Folders.path('library', folder.id) || folder.name;
+        return `
+          <article class="folder-spot" onclick="Search.openFolder('library','${folder.id}')" title="${escHtml(path)}">
+            <div class="folder-spot-head">
+              <span class="folder-spot-ico">${folderIconMarkup('folder-spot')}</span>
+              <div style="min-width:0;">
+                <div class="folder-spot-name">${escHtml(folder.name)}</div>
+                <div class="folder-spot-path">Biblioteca · ${escHtml(path)}</div>
+              </div>
+            </div>
+            <div class="folder-spot-stats">
+              <span class="folder-spot-chip">${stats.items} arquivo(s)</span>
+              <span class="folder-spot-chip">${stats.folders} subpasta(s)</span>
+            </div>
+          </article>
+        `;
+      }).join('');
+      html += folderHits.projects.map(folder => {
+        const stats = Folders.folderStats('projects', folder.id);
+        const path = Folders.path('projects', folder.id) || folder.name;
+        return `
+          <article class="folder-spot" onclick="Search.openFolder('projects','${folder.id}')" title="${escHtml(path)}">
+            <div class="folder-spot-head">
+              <span class="folder-spot-ico">${folderIconMarkup('folder-spot')}</span>
+              <div style="min-width:0;">
+                <div class="folder-spot-name">${escHtml(folder.name)}</div>
+                <div class="folder-spot-path">Projetos · ${escHtml(path)}</div>
+              </div>
+            </div>
+            <div class="folder-spot-stats">
+              <span class="folder-spot-chip">${stats.items} projeto(s)</span>
+              <span class="folder-spot-chip">${stats.folders} subpasta(s)</span>
+            </div>
+          </article>
+        `;
+      }).join('');
+      html += `</div>`;
+    }
 
     if (hlHits.length) {
       html += sect('Highlights', hlHits.length);
@@ -3518,6 +4193,13 @@ const Search = {
       ).join('');
     }
     res.innerHTML = html;
+  },
+
+  openFolder(scope, id) {
+    if (!id) return;
+    Folders.setCurrent(scope, id);
+    if (scope === 'projects') UI.nav('projects');
+    else UI.nav('library');
   },
 
   async jumpHL(pdfId, page) {

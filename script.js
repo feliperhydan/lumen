@@ -1456,7 +1456,7 @@ const PV = {
 
       if (!reusedPlaceholders) scroller.innerHTML = '';
 
-      const renderOrder = preserveView
+      const renderOrder = preserveView && reusedPlaceholders
         ? this._renderSequence(S.totalPages, viewState?.page || S.currentPage)
         : this._renderSequence(S.totalPages, 1);
 
@@ -2329,6 +2329,7 @@ const Library = {
     }
 
     const mode = normalizeWorkspaceMode(options.mode || S.activeTab || 'reader');
+    const shouldPreserveView = Boolean(options?.preserveView || options?.viewState);
 
     S.highlights = await DB.highlights.byPDF(doc.id);
     S.currentDoc = doc;
@@ -2348,6 +2349,7 @@ const Library = {
     delete pvOptions.skipTabRegister;
     delete pvOptions.skipTabCapture;
     delete pvOptions.mode;
+    pvOptions.preserveView = shouldPreserveView;
     await PV.open(doc, pvOptions);
 
     UI.tab(mode);

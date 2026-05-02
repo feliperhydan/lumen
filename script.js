@@ -214,6 +214,7 @@ const S = {
   cats: [], pending: null, openProjId: null,
   docTags: [],
   selectedHL: null, imgMode: false,
+  workspaceTabs: [], activeWorkspaceTabId: null,
   folders: {library: [], projects: []},
   currentFolder: {library: 'root', projects: 'root'},
   libFilter: { tags: [], type: '', lang: '', sort: 'date-desc' },
@@ -2314,21 +2315,42 @@ const Library = {
   },
 
   async open(doc, options = {}) {
+    if (!options?.skipTabRegister && typeof Tabs?.openDoc === 'function') {
+      return Tabs.openDoc(doc, options);
+    }
+    return this._openDocView(doc, options);
+  },
+
+  async _openDocView(doc, options = {}) {
     if (!options?.skipHistory && (S.view === 'reader' || S.view === 'suco')) {
       if (S.currentDoc && S.currentDoc.id !== doc.id) {
         UI._pushHistory(UI._captureNavState());
       }
     }
+
+    const mode = normalizeWorkspaceMode(options.mode || S.activeTab || 'reader');
+
     S.highlights = await DB.highlights.byPDF(doc.id);
     S.currentDoc = doc;
-    UI.nav('reader', false, { skipHistory: Boolean(options?.skipHistory) });
+
+    UI.nav('reader', false, {
+      skipHistory: Boolean(options?.skipHistory),
+      skipTabCapture: true,
+    });
     document.querySelectorAll('[id^="sdoc-"]').forEach(e => e.classList.remove('active'));
     document.getElementById(`sdoc-${doc.id}`)?.classList.add('active');
-    UI.renderCats(); UI.renderPanelInfo(doc);
+    UI.renderCats();
+    UI.renderPanelInfo(doc);
     document.getElementById('doc-title-hdr').textContent = doc.title || doc.name;
+
     const pvOptions = { ...options };
     delete pvOptions.skipHistory;
+    delete pvOptions.skipTabRegister;
+    delete pvOptions.skipTabCapture;
+    delete pvOptions.mode;
     await PV.open(doc, pvOptions);
+
+    UI.tab(mode);
   },
 
   editMeta(id) {
@@ -2811,6 +2833,7 @@ const Library = {
     }
     d.tags   = [...this._modalTags].filter(t => S.docTags.includes(t));
     await DB.pdfs.save(d);
+    if (typeof Tabs?.syncDoc === 'function') Tabs.syncDoc(d);
     Modal.hide(); this.renderGrid(); this.renderSidebar();
     if (S.currentDoc?.id === id) {
       S.currentDoc = d;
@@ -3615,9 +3638,17 @@ const Proj = {
   async open(id, options = {}) {
     const p = typeof id === 'string' ? await DB.projects.get(id) : id;
     if (!p) return;
-    UI._maybePushHistory('proj-editor', options);
-    S.view = 'proj-editor';
-    UI._setViewClass('proj-editor');
+    if (!options?.skipTabRegister && typeof Tabs?.openProject === 'function') {
+      return Tabs.openProject(p, options);
+    }
+    return this._openProjectView(p, options);
+  },
+
+  async _openProjectView(p, options = {}) {
+    UI.nav('proj-editor', true, {
+      skipHistory: Boolean(options?.skipHistory),
+      skipTabCapture: true,
+    });
     S.openProjId = p.id;
     document.getElementById('proj-edit-title').textContent = p.title;
 
@@ -3633,12 +3664,6 @@ const Proj = {
         fallback.oninput = () => this.onInput();
       }
     }
-
-    const views = ['library-view','reader-view','suco-view','projects-view','proj-editor-view','attachments-view','search-view'];
-    views.forEach(v => document.getElementById(v)?.classList.toggle('active', v === 'proj-editor-view'));
-    document.getElementById('main-tabs').style.display = 'none';
-    document.querySelectorAll('[id^="snav-"]').forEach(e => e.classList.remove('active'));
-    document.getElementById('snav-projects').classList.add('active');
 
     const editorBar = document.querySelector('.editor-bar');
     if (editorBar && !editorBar.querySelector('.page-break-btn')) {
@@ -3928,7 +3953,6 @@ const Attachments = {
 
     // Open the project editor
     await Proj.open(proj.id);
-    UI.nav('proj-editor');
 
     // Append the card into the editor
     setTimeout(() => {
@@ -4208,6 +4232,459 @@ const Search = {
   },
 };
 
+const Tabs = {
+  storageKey: 'lumen.workspace-tabs.v1',
+
+  load() {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      if (!raw) {
+        S.workspaceTabs = [];
+        S.activeWorkspaceTabId = null;
+        this.render();
+        return;
+      }
+
+      const parsed = JSON.parse(raw);
+      const rawTabs = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.tabs) ? parsed.tabs : []);
+      S.workspaceTabs = rawTabs.map(tab => this._normalizeTab(tab)).filter(Boolean);
+
+      const storedActiveId = Array.isArray(parsed)
+        ? null
+        : String(parsed?.activeId || parsed?.activeWorkspaceTabId || '').trim() || null;
+
+      if (storedActiveId && S.workspaceTabs.some(tab => tab.id === storedActiveId)) {
+        S.activeWorkspaceTabId = storedActiveId;
+      } else {
+        const lastUsed = S.workspaceTabs.reduce((winner, tab) => {
+          if (!winner) return tab;
+          return (Number(tab.lastUsedAt) || 0) > (Number(winner.lastUsedAt) || 0) ? tab : winner;
+        }, null);
+        S.activeWorkspaceTabId = lastUsed?.id || null;
+      }
+    } catch (err) {
+      console.warn('Falha ao restaurar abas abertas.', err);
+      S.workspaceTabs = [];
+      S.activeWorkspaceTabId = null;
+    }
+
+    this.render();
+  },
+
+  save() {
+    try {
+      localStorage.setItem(this.storageKey, JSON.stringify({
+        tabs: S.workspaceTabs,
+        activeId: S.activeWorkspaceTabId,
+      }));
+    } catch (err) {
+      console.warn('Falha ao salvar abas abertas.', err);
+    }
+  },
+
+  get active() {
+    return S.workspaceTabs.find(tab => tab.id === S.activeWorkspaceTabId) || null;
+  },
+
+  find(tabId) {
+    return S.workspaceTabs.find(tab => tab.id === tabId) || null;
+  },
+
+  findDocTab(docId) {
+    return this.find(`doc:${docId}`);
+  },
+
+  findProjectTab(projId) {
+    return this.find(`proj:${projId}`);
+  },
+
+  _normalizeTab(tab) {
+    if (!tab || typeof tab !== 'object' || Array.isArray(tab)) return null;
+
+    const kind = tab.kind === 'project' ? 'project' : 'doc';
+    const resourceId = String(tab.resourceId || '').trim();
+    if (!resourceId) return null;
+
+    const id = String(tab.id || `${kind}:${resourceId}`).trim();
+    const createdAt = Number(tab.createdAt) || Date.now();
+    const updatedAt = Number(tab.updatedAt) || createdAt;
+    const lastUsedAt = Number(tab.lastUsedAt) || updatedAt;
+
+    if (kind === 'doc') {
+      return {
+        id,
+        kind,
+        resourceId,
+        label: String(tab.label || '').trim() || 'Documento',
+        docType: String(tab.docType || '').trim() || 'outro',
+        subview: normalizeWorkspaceMode(tab.subview || 'reader'),
+        viewState: this._normalizeViewState(tab.viewState),
+        createdAt,
+        updatedAt,
+        lastUsedAt,
+      };
+    }
+
+    return {
+      id,
+      kind,
+      resourceId,
+      label: String(tab.label || '').trim() || 'Projeto',
+      createdAt,
+      updatedAt,
+      lastUsedAt,
+    };
+  },
+
+  _normalizeViewState(state) {
+    if (!state || typeof state !== 'object' || Array.isArray(state)) return null;
+    const page = Math.max(1, Number(state.page) || 1);
+    const centerRatioValue = Number(state.centerRatio);
+    return {
+      page,
+      centerRatio: Number.isFinite(centerRatioValue) ? Math.max(0, Math.min(1, centerRatioValue)) : 0.5,
+    };
+  },
+
+  _workspaceLabel(tab) {
+    if (!tab) return '';
+    if (tab.kind === 'project') {
+      const proj = S.projectItems.find(item => item.id === tab.resourceId) || null;
+      return workspaceProjectTabLabel(proj || { title: tab.label });
+    }
+
+    const doc = S.docs.find(item => item.id === tab.resourceId) || null;
+    return workspaceDocTabLabel(doc || { title: tab.label, name: tab.label });
+  },
+
+  _workspaceKindLabel(tab) {
+    if (!tab) return '';
+    if (tab.kind === 'project') return 'Projeto';
+    const doc = S.docs.find(item => item.id === tab.resourceId) || null;
+    return docTypeLabel(normalizeDocType(doc?.type || tab.docType || 'outro'));
+  },
+
+  _isVisible(tab) {
+    if (!tab) return false;
+    if (tab.kind === 'doc') {
+      return Boolean(S.currentDoc && S.currentDoc.id === tab.resourceId && (S.view === 'reader' || S.view === 'suco'));
+    }
+    return Boolean(S.openProjId && S.openProjId === tab.resourceId && S.view === 'proj-editor');
+  },
+
+  captureCurrentTabState() {
+    const tab = this.active;
+    if (!tab) return null;
+
+    const now = Date.now();
+    let changed = false;
+
+    if (tab.kind === 'doc' && S.currentDoc && S.currentDoc.id === tab.resourceId && (S.view === 'reader' || S.view === 'suco')) {
+      const nextLabel = workspaceDocTabLabel(S.currentDoc);
+      const nextType = normalizeDocType(S.currentDoc.type);
+      const nextSubview = normalizeWorkspaceMode(S.view);
+      const nextViewState = S.pdfDoc && typeof PV._captureViewState === 'function'
+        ? this._normalizeViewState(PV._captureViewState())
+        : tab.viewState || null;
+
+      if (tab.label !== nextLabel) { tab.label = nextLabel; changed = true; }
+      if (tab.docType !== nextType) { tab.docType = nextType; changed = true; }
+      if (tab.subview !== nextSubview) { tab.subview = nextSubview; changed = true; }
+      if (JSON.stringify(tab.viewState || null) !== JSON.stringify(nextViewState || null)) {
+        tab.viewState = nextViewState;
+        changed = true;
+      }
+      tab.updatedAt = now;
+      tab.lastUsedAt = now;
+    }
+
+    if (tab.kind === 'project' && S.openProjId && S.openProjId === tab.resourceId && S.view === 'proj-editor') {
+      const proj = S.projectItems.find(item => item.id === tab.resourceId) || null;
+      const nextLabel = workspaceProjectTabLabel(proj || { title: tab.label });
+      if (tab.label !== nextLabel) { tab.label = nextLabel; changed = true; }
+      tab.updatedAt = now;
+      tab.lastUsedAt = now;
+    }
+
+    if (changed) this.save();
+    return tab;
+  },
+
+  setActiveSubview(subview) {
+    const tab = this.active;
+    if (!tab || tab.kind !== 'doc') return null;
+    const nextSubview = normalizeWorkspaceMode(subview);
+    if (tab.subview !== nextSubview) {
+      tab.subview = nextSubview;
+      tab.updatedAt = Date.now();
+      tab.lastUsedAt = Date.now();
+      this.save();
+    }
+    this.render();
+    return tab;
+  },
+
+  _upsertDocTab(doc, options = {}) {
+    const id = `doc:${doc.id}`;
+    const now = Date.now();
+    let tab = this.find(id);
+    const nextSubview = normalizeWorkspaceMode(options.mode || tab?.subview || S.activeTab || 'reader');
+
+    if (!tab) {
+      tab = {
+        id,
+        kind: 'doc',
+        resourceId: doc.id,
+        label: workspaceDocTabLabel(doc),
+        docType: normalizeDocType(doc.type),
+        subview: nextSubview,
+        viewState: this._normalizeViewState(options.viewState),
+        createdAt: now,
+        updatedAt: now,
+        lastUsedAt: now,
+      };
+      S.workspaceTabs.push(tab);
+      return tab;
+    }
+
+    tab.label = workspaceDocTabLabel(doc);
+    tab.docType = normalizeDocType(doc.type);
+    tab.subview = nextSubview;
+    if (options.viewState) {
+      tab.viewState = this._normalizeViewState(options.viewState);
+    }
+    tab.updatedAt = now;
+    tab.lastUsedAt = now;
+    return tab;
+  },
+
+  _upsertProjectTab(project) {
+    const id = `proj:${project.id}`;
+    const now = Date.now();
+    let tab = this.find(id);
+
+    if (!tab) {
+      tab = {
+        id,
+        kind: 'project',
+        resourceId: project.id,
+        label: workspaceProjectTabLabel(project),
+        createdAt: now,
+        updatedAt: now,
+        lastUsedAt: now,
+      };
+      S.workspaceTabs.push(tab);
+      return tab;
+    }
+
+    tab.label = workspaceProjectTabLabel(project);
+    tab.updatedAt = now;
+    tab.lastUsedAt = now;
+    return tab;
+  },
+
+  async openDoc(doc, options = {}) {
+    if (!doc || !doc.id) return null;
+    if (!options.skipCapture) this.captureCurrentTabState();
+
+    const tab = this._upsertDocTab(doc, options);
+    S.activeWorkspaceTabId = tab.id;
+    tab.lastUsedAt = Date.now();
+    this.save();
+    this.render();
+
+    const mode = normalizeWorkspaceMode(options.mode || tab.subview || 'reader');
+    await Library._openDocView(doc, {
+      ...options,
+      skipTabRegister: true,
+      skipCapture: true,
+      skipTabCapture: true,
+      mode,
+      viewState: tab.viewState,
+    });
+    this.render();
+    return tab;
+  },
+
+  async openProject(project, options = {}) {
+    if (!project || !project.id) return null;
+    if (!options.skipCapture) this.captureCurrentTabState();
+
+    const tab = this._upsertProjectTab(project, options);
+    S.activeWorkspaceTabId = tab.id;
+    tab.lastUsedAt = Date.now();
+    this.save();
+    this.render();
+
+    await Proj._openProjectView(project, {
+      ...options,
+      skipTabRegister: true,
+      skipCapture: true,
+      skipTabCapture: true,
+    });
+    this.render();
+    return tab;
+  },
+
+  async activate(tabId, options = {}) {
+    const tab = this.find(tabId);
+    if (!tab) return null;
+
+    const alreadyVisible = this._isVisible(tab);
+    if (alreadyVisible && !options.force) {
+      S.activeWorkspaceTabId = tab.id;
+      tab.lastUsedAt = Date.now();
+      this.save();
+      this.render();
+      return tab;
+    }
+
+    if (!options.skipCapture) this.captureCurrentTabState();
+
+    S.activeWorkspaceTabId = tab.id;
+    tab.lastUsedAt = Date.now();
+    this.save();
+    this.render();
+
+    if (tab.kind === 'doc') {
+      const doc = S.docs.find(item => item.id === tab.resourceId);
+      if (!doc) return tab;
+      return this.openDoc(doc, {
+        ...options,
+        skipCapture: true,
+        skipTabRegister: true,
+        skipTabCapture: true,
+        mode: normalizeWorkspaceMode(tab.subview || 'reader'),
+        viewState: tab.viewState,
+      });
+    }
+
+    const project = S.projectItems.find(item => item.id === tab.resourceId) || await DB.projects.get(tab.resourceId);
+    if (!project) return tab;
+    return this.openProject(project, {
+      ...options,
+      skipCapture: true,
+      skipTabRegister: true,
+      skipTabCapture: true,
+    });
+  },
+
+  async close(tabId) {
+    const index = S.workspaceTabs.findIndex(tab => tab.id === tabId);
+    if (index < 0) return;
+
+    const closingActive = S.activeWorkspaceTabId === tabId;
+    if (closingActive) this.captureCurrentTabState();
+
+    S.workspaceTabs.splice(index, 1);
+
+    if (!S.workspaceTabs.length) {
+      S.activeWorkspaceTabId = null;
+      this.save();
+      this.render();
+      if (S.view === 'reader' || S.view === 'suco' || S.view === 'proj-editor') {
+        UI.nav('library', true, { skipHistory: true, skipTabCapture: true });
+      }
+      return;
+    }
+
+    const nextTab = S.workspaceTabs[index] || S.workspaceTabs[index - 1] || S.workspaceTabs[S.workspaceTabs.length - 1];
+    S.activeWorkspaceTabId = nextTab.id;
+    this.save();
+    this.render();
+
+    if (closingActive) {
+      await this.activate(nextTab.id, {
+        force: true,
+        skipCapture: true,
+        skipHistory: true,
+      });
+    }
+  },
+
+  syncDoc(doc) {
+    if (!doc || !doc.id) return;
+    const tab = this.findDocTab(doc.id);
+    if (!tab) return;
+
+    tab.label = workspaceDocTabLabel(doc);
+    tab.docType = normalizeDocType(doc.type);
+    if (S.currentDoc && S.currentDoc.id === doc.id && (S.view === 'reader' || S.view === 'suco')) {
+      tab.subview = normalizeWorkspaceMode(S.view);
+      if (S.pdfDoc && typeof PV._captureViewState === 'function') {
+        tab.viewState = this._normalizeViewState(PV._captureViewState());
+      }
+    }
+    tab.updatedAt = Date.now();
+    this.save();
+    this.render();
+  },
+
+  syncProject(project) {
+    if (!project || !project.id) return;
+    const tab = this.findProjectTab(project.id);
+    if (!tab) return;
+    tab.label = workspaceProjectTabLabel(project);
+    tab.updatedAt = Date.now();
+    this.save();
+    this.render();
+  },
+
+  restoreActiveWorkspace() {
+    const activeTabId = S.activeWorkspaceTabId || S.workspaceTabs[S.workspaceTabs.length - 1]?.id || null;
+    if (!activeTabId) {
+      this.render();
+      return;
+    }
+
+    return this.activate(activeTabId, {
+      force: true,
+      skipCapture: true,
+      skipHistory: true,
+    });
+  },
+
+  render() {
+    const bar = document.getElementById('main-tabs');
+    const tabsHost = document.getElementById('workspace-tabs');
+    const modeHost = document.getElementById('workspace-mode-tabs');
+    const titleHost = document.getElementById('doc-title-hdr');
+    const active = this.active;
+    const visible = this._isVisible(active);
+
+    if (bar) bar.style.display = (S.workspaceTabs.length || visible) ? 'flex' : 'none';
+
+    if (tabsHost) {
+      tabsHost.innerHTML = S.workspaceTabs.map(tab => {
+        const isActive = tab.id === S.activeWorkspaceTabId;
+        const kindLabel = this._workspaceKindLabel(tab);
+        const title = this._workspaceLabel(tab);
+        return `
+          <div class="workspace-tab ${isActive ? 'active' : ''}" data-tab-id="${escHtml(tab.id)}" onclick="Tabs.activate('${escHtml(tab.id)}')">
+            <span class="workspace-tab-kind">${escHtml(kindLabel)}</span>
+            <span class="workspace-tab-title">${escHtml(title)}</span>
+            <button class="workspace-tab-close" onclick="event.stopPropagation();Tabs.close('${escHtml(tab.id)}')" title="Fechar aba">×</button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    if (titleHost) {
+      titleHost.textContent = active ? this._workspaceLabel(active) : '';
+    }
+
+    if (modeHost) {
+      const showModes = active?.kind === 'doc' && (S.view === 'reader' || S.view === 'suco');
+      modeHost.style.display = showModes ? 'flex' : 'none';
+    }
+
+    const readerTab = document.getElementById('tab-reader');
+    const sucoTab = document.getElementById('tab-suco');
+    if (readerTab) readerTab.classList.toggle('active', S.view === 'reader');
+    if (sucoTab) sucoTab.classList.toggle('active', S.view === 'suco');
+  },
+};
+
 /* ══════════════════════════════════════
    UI CONTROLLER
 ══════════════════════════════════════ */
@@ -4313,11 +4790,14 @@ const UI = {
   },
 
   nav(view, updateNav = true, options = {}) {
+    if (!options.skipTabCapture && typeof Tabs?.captureCurrentTabState === 'function') {
+      Tabs.captureCurrentTabState();
+    }
+
     this._maybePushHistory(view, options);
     S.view = view;
     this._setViewClass(view);
-    const isReader = view === 'reader' || view === 'suco';
-    document.getElementById('main-tabs').style.display   = isReader ? 'flex' : 'none';
+    if (typeof Tabs?.render === 'function') Tabs.render();
     document.getElementById('pdf-bar').style.display     = (view === 'reader' && S.pdfDoc) ? 'flex' : 'none';
 
     VIEWS.forEach(v => {
@@ -4337,7 +4817,7 @@ const UI = {
       document.querySelectorAll('[id^="snav-"]').forEach(e => e.classList.remove('active'));
       const navMap = {
         library: 'library', reader: 'library', suco: 'library',
-        projects: 'projects', attachments: 'attachments', search: 'search'
+        projects: 'projects', 'proj-editor': 'projects', attachments: 'attachments', search: 'search'
       };
       const navId = navMap[view];
       if (navId) document.getElementById('snav-' + navId)?.classList.add('active');
@@ -4351,10 +4831,16 @@ const UI = {
   },
 
   tab(t) {
+    if (typeof Tabs?.captureCurrentTabState === 'function') {
+      Tabs.captureCurrentTabState();
+    }
     S.activeTab = t;
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
     document.getElementById('tab-' + t)?.classList.add('active');
-    this.nav(t, false);
+    if (typeof Tabs?.setActiveSubview === 'function') {
+      Tabs.setActiveSubview(t);
+    }
+    this.nav(t, false, { skipTabCapture: true });
   },
 
   upload() { document.getElementById('file-input').click(); },
@@ -4821,6 +5307,16 @@ function isReportDoc(doc) {
 function isOtherDoc(doc) {
   return String(doc?.type || '').trim().toLowerCase() === 'outro';
 }
+function normalizeWorkspaceMode(rawMode) {
+  const mode = String(rawMode || 'reader').trim().toLowerCase();
+  return mode === 'suco' ? 'suco' : 'reader';
+}
+function workspaceDocTabLabel(doc) {
+  return String(doc?.title || doc?.name || 'Documento').trim() || 'Documento';
+}
+function workspaceProjectTabLabel(project) {
+  return String(project?.title || 'Projeto').trim() || 'Projeto';
+}
 function libraryCardMeta(doc) {
   if (isBookDoc(doc)) {
     const edition = doc.edition ? `${doc.edition} ed.` : null;
@@ -4911,23 +5407,81 @@ function matchDoi(text) {
   return '';
 }
 
+function normalizeIsbnText(raw) {
+  return String(raw || '')
+    .replace(/[\u00ad\u2010-\u2015\u2212]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isValidIsbn13(digits) {
+  if (!/^[0-9]{13}$/.test(digits)) return false;
+  let sum = 0;
+  for (let i = 0; i < 12; i += 1) {
+    const digit = Number(digits[i]);
+    sum += (i % 2 === 0) ? digit : digit * 3;
+  }
+  const check = (10 - (sum % 10)) % 10;
+  return check === Number(digits[12]);
+}
+
+function isValidIsbn10(value) {
+  if (!/^[0-9]{9}[0-9X]$/.test(value)) return false;
+  let sum = 0;
+  for (let i = 0; i < 10; i += 1) {
+    const ch = value[i];
+    const digit = ch === 'X' ? 10 : Number(ch);
+    sum += (i + 1) * digit;
+  }
+  return sum % 11 === 0;
+}
+
 function normalizeIsbn13(raw) {
   const digits = String(raw || '').replace(/[^0-9]/g, '');
   if (digits.length !== 13) return '';
   if (!digits.startsWith('978') && !digits.startsWith('979')) return '';
+  if (!isValidIsbn13(digits)) return '';
   return digits;
 }
 
-function matchIsbn13(text) {
-  const source = String(text || '').replace(/\s+/g, ' ').trim();
+function normalizeIsbn10(raw) {
+  const digits = String(raw || '')
+    .toUpperCase()
+    .replace(/[^0-9X]/g, '');
+  if (digits.length !== 10) return '';
+  if (!isValidIsbn10(digits)) return '';
+  return digits;
+}
+
+function isbn10To13(isbn10) {
+  const base = `978${isbn10.slice(0, 9)}`;
+  let sum = 0;
+  for (let i = 0; i < 12; i += 1) {
+    const digit = Number(base[i]);
+    sum += (i % 2 === 0) ? digit : digit * 3;
+  }
+  const check = (10 - (sum % 10)) % 10;
+  return `${base}${check}`;
+}
+
+function matchIsbn(text) {
+  const source = normalizeIsbnText(text);
   if (!source) return '';
 
-  const direct = source.match(/\b97[89][0-9\-\s]{10,16}[0-9]\b/g);
-  if (!direct) return '';
+  const isbn13Matches = source.match(/\b97[89][0-9\-\s]{10,16}[0-9]\b/g);
+  if (isbn13Matches) {
+    for (const hit of isbn13Matches) {
+      const normalized = normalizeIsbn13(hit);
+      if (normalized) return normalized;
+    }
+  }
 
-  for (const hit of direct) {
-    const normalized = normalizeIsbn13(hit);
-    if (normalized) return normalized;
+  const isbn10Matches = source.match(/\b[0-9][0-9\-\s]{8,12}[0-9X]\b/gi);
+  if (isbn10Matches) {
+    for (const hit of isbn10Matches) {
+      const normalized10 = normalizeIsbn10(hit);
+      if (normalized10) return isbn10To13(normalized10);
+    }
   }
 
   return '';
@@ -4976,7 +5530,7 @@ async function extractIsbnFromPdfFile(file, maxPages = 8) {
       const content = await page.getTextContent();
       text += ` ${content.items.map(item => item.str || '').join(' ')}`;
 
-      const isbn = matchIsbn13(text);
+      const isbn = matchIsbn(text);
       if (isbn) return isbn;
     }
   } catch (err) {
@@ -5005,6 +5559,7 @@ async function syncDocTitleFromDoi(doc, options = {}) {
   const ix = S.docs.findIndex(item => item.id === doc.id);
   if (ix >= 0) S.docs[ix] = doc;
   if (S.currentDoc?.id === doc.id) S.currentDoc = doc;
+  if (typeof Tabs?.syncDoc === 'function') Tabs.syncDoc(doc);
 
   if (options.refreshUi) {
     Library.renderGrid();
@@ -5034,6 +5589,7 @@ async function syncDocMetaFromIsbn(doc, options = {}) {
   const ix = S.docs.findIndex(item => item.id === doc.id);
   if (ix >= 0) S.docs[ix] = doc;
   if (S.currentDoc?.id === doc.id) S.currentDoc = doc;
+  if (typeof Tabs?.syncDoc === 'function') Tabs.syncDoc(doc);
 
   if (options.refreshUi) {
     Library.renderGrid();
@@ -5062,12 +5618,16 @@ async function init() {
   try {
     await DB.init();
     await loadCats();
+    if (typeof Tabs?.load === 'function') Tabs.load();
     UI.renderCats();
     document.body.classList.add('sidebar-open');
     UI._setViewClass(S.view);
     UI._refreshBackButton();
     ImgCapture.init();
     await Library.load();
+    if (typeof Tabs?.restoreActiveWorkspace === 'function') {
+      await Tabs.restoreActiveWorkspace();
+    }
     toast('Lumen carregado ✓');
   } catch(err) {
     console.error(err);

@@ -35,9 +35,14 @@
 <!-- ── MAIN ── -->
 <main id="main">
   <div class="main-tabs" id="main-tabs">
-    <button class="tab active" id="tab-reader" onclick="UI.tab('reader')">Leitor</button>
-    <button class="tab"        id="tab-suco"   onclick="UI.tab('suco')">Suco</button>
-    <div id="doc-title-hdr"></div>
+    <div class="workspace-tabs" id="workspace-tabs"></div>
+    <div class="workspace-controls">
+      <div class="workspace-mode-tabs">
+        <button class="tab active" id="tab-reader" onclick="UI.tab('reader')">Leitor</button>
+        <button class="tab"        id="tab-suco"   onclick="UI.tab('suco')">Suco</button>
+      </div>
+      <div id="doc-title-hdr"></div>
+    </div>
   </div>
   <div class="main-content">
     <!-- LIBRARY -->

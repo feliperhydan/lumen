@@ -4876,7 +4876,6 @@ function libraryCardMeta(doc) {
     return [
       doc.author || '—',
       doc.year || null,
-      doc.doi ? `DOI: ${doc.doi}` : null,
     ].filter(Boolean).join(' · ');
   }
   return [doc.author || '—', doc.year || null].filter(Boolean).join(' · ');

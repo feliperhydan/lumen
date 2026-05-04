@@ -501,7 +501,7 @@ app.get('/api/pdfs/:id/file', async (req, res, next) => {
 function backupFileName() {
   const now = new Date();
   const stamp = now.toISOString().replace(/[:.]/g, '-');
-  return `lumen-backup-${stamp}.zip`;
+  return `sintese-backup-${stamp}.zip`;
 }
 
 async function copyDir(sourceDir, targetDir) {
@@ -1012,6 +1012,6 @@ app.use((err, _req, res, _next) => {
 (async () => {
   await ensureStorage();
   app.listen(PORT, () => {
-    console.log(`Lumen server rodando em http://localhost:${PORT}`);
+    console.log(`Síntese server rodando em http://localhost:${PORT}`);
   });
 })();

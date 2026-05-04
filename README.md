@@ -1,7 +1,7 @@
-# Lumen
+# Síntese
 
 
-Lumen é um ambiente acadêmico local para organizar PDFs, highlights, projetos e anexos em um único lugar.
+Síntese é um ambiente acadêmico local para organizar PDFs, highlights, projetos e anexos em um único lugar.
 
 ## Funcionalidades
 

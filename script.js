@@ -4878,7 +4878,7 @@ const UI = {
         <h3>Classificar arquivos</h3>
         <p class="modal-subtle">
           Escolha como cada PDF deve entrar na biblioteca. Para arquivos marcados como
-          <strong>artigo / paper científico</strong>, o Lumen tenta localizar o DOI automaticamente.
+          <strong>artigo / paper científico</strong>, o Síntese tenta localizar o DOI automaticamente.
         </p>
         <div class="upload-kind-list">${rows}</div>
         <div class="upload-kind-legend">
@@ -5091,7 +5091,7 @@ const UI = {
             <button class="btn btn-sm" onclick="UI.promptBackupImport()">⬆️ Importar backup</button>
           </div>
           <input type="file" id="backup-file" accept=".zip" style="display:none;" onchange="UI.onBackupImport(event)">
-          <div class="meta-doi-tip" style="margin-top:8px;">Exporta e restaura todos os dados locais do Lumen (PDFs e metadados).</div>
+          <div class="meta-doi-tip" style="margin-top:8px;">Exporta e restaura todos os dados locais do Síntese (PDFs e metadados).</div>
         </div>
       </div>
       <div class="mactions"><button class="btn" onclick="Modal.hide()">Fechar</button></div>
@@ -5630,7 +5630,7 @@ async function init() {
     if (typeof Tabs?.restoreActiveWorkspace === 'function') {
       await Tabs.restoreActiveWorkspace();
     }
-    toast('Lumen carregado ✓');
+    toast('Síntese carregado ✓');
   } catch(err) {
     console.error(err);
     toast('Erro ao inicializar. Verifique o console.');

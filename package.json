@@ -2,7 +2,7 @@
   "name": "lumen-v8",
   "version": "1.0.0",
   "private": true,
-  "description": "Lumen - ambiente academico com leitor de PDF e persistencia em servidor local",
+  "description": "Síntese - ambiente academico com leitor de PDF e persistencia em servidor local",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

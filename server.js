@@ -6,6 +6,7 @@ const { execFile } = require('child_process');
 const fs = require('fs/promises');
 const path = require('path');
 const { promisify } = require('util');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +15,7 @@ const ROOT_DIR = __dirname;
 const DATA_DIR = path.join(ROOT_DIR, 'server-data');
 const PDF_DIR = path.join(DATA_DIR, 'pdfs');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
+const SQLITE_PATH = path.join(DATA_DIR, 'db.sqlite3');
 
 const DEFAULT_DB = {
   pdfs: [],
@@ -34,6 +36,77 @@ let db = clone(DEFAULT_DB);
 let writeQueue = Promise.resolve();
 const execFileAsync = promisify(execFile);
 let curlExecutablePromise = null;
+
+let sqlDb;
+
+function initSqlite() {
+  return new Promise((resolve, reject) => {
+    sqlDb = new sqlite3.Database(SQLITE_PATH, (err) => {
+      if (err) return reject(err);
+      
+      const tables = ['pdfs', 'highlights', 'projects', 'attachments', 'suco_notes', 'settings'];
+      let completed = 0;
+      
+      sqlDb.serialize(() => {
+        tables.forEach(table => {
+          sqlDb.run(`CREATE TABLE IF NOT EXISTS ${table} (id TEXT PRIMARY KEY, data TEXT)`, (err) => {
+            if (err) return reject(err);
+            completed++;
+            if (completed === tables.length) resolve();
+          });
+        });
+      });
+    });
+  });
+}
+
+function sqlUpsert(table, id, data) {
+  return new Promise((resolve, reject) => {
+    sqlDb.run(`INSERT OR REPLACE INTO ${table} (id, data) VALUES (?, ?)`, [id, JSON.stringify(data)], (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function sqlDelete(table, id) {
+  return new Promise((resolve, reject) => {
+    sqlDb.run(`DELETE FROM ${table} WHERE id = ?`, [id], (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+function sqlGetAll(table) {
+  return new Promise((resolve, reject) => {
+    sqlDb.all(`SELECT data FROM ${table}`, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows.map(r => JSON.parse(r.data)));
+    });
+  });
+}
+
+async function resetSqliteFromMemory() {
+  return new Promise((resolve, reject) => {
+    sqlDb.serialize(async () => {
+      try {
+        const tables = ['pdfs', 'highlights', 'projects', 'attachments', 'suco_notes', 'settings'];
+        tables.forEach(table => sqlDb.run(`DELETE FROM ${table}`));
+        
+        for (const p of db.pdfs) await sqlUpsert('pdfs', p.id, p);
+        for (const h of db.highlights) await sqlUpsert('highlights', h.id, h);
+        for (const p of db.projects) await sqlUpsert('projects', p.id, p);
+        for (const a of db.attachments) await sqlUpsert('attachments', a.id, a);
+        for (const n of db.suco_notes) await sqlUpsert('suco_notes', n.id, n);
+        await sqlUpsert('settings', 'settings', db.settings);
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
 
 function clone(obj) {
   return JSON.parse(JSON.stringify(obj));
@@ -140,25 +213,43 @@ function normalizeDb(raw) {
 }
 
 async function saveDb() {
-  writeQueue = writeQueue.then(async () => {
-    const tmpPath = `${DB_PATH}.tmp`;
-    await fs.writeFile(tmpPath, JSON.stringify(db, null, 2), 'utf8');
-    await fs.rename(tmpPath, DB_PATH);
-  });
-
-  return writeQueue;
+  await sqlUpsert('settings', 'settings', db.settings);
 }
 
 async function ensureStorage() {
   await fs.mkdir(PDF_DIR, { recursive: true });
+  await initSqlite();
 
+  let loadedFromSql = false;
   try {
-    const raw = await fs.readFile(DB_PATH, 'utf8');
-    db = normalizeDb(JSON.parse(raw));
+    const pdfs = await sqlGetAll('pdfs');
+    if (pdfs.length > 0) {
+      db.pdfs = pdfs;
+      db.highlights = await sqlGetAll('highlights');
+      db.projects = await sqlGetAll('projects');
+      db.attachments = await sqlGetAll('attachments');
+      db.suco_notes = await sqlGetAll('suco_notes');
+      const settingsRows = await sqlGetAll('settings');
+      if (settingsRows.length > 0) {
+        db.settings = settingsRows[0];
+      }
+      loadedFromSql = true;
+    }
   } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
-    db = clone(DEFAULT_DB);
-    await saveDb();
+    console.error('Error loading from SQLite', err);
+  }
+
+  if (!loadedFromSql) {
+    // Fallback to db.json migration
+    try {
+      const raw = await fs.readFile(DB_PATH, 'utf8');
+      db = normalizeDb(JSON.parse(raw));
+      await resetSqliteFromMemory();
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+      db = clone(DEFAULT_DB);
+      await saveDb();
+    }
   }
 }
 
@@ -174,6 +265,7 @@ function upsert(listName, value) {
   } else {
     list.push(value);
   }
+  sqlUpsert(listName, value.id, value).catch(err => console.error('SQL Upsert Error', err));
   return value;
 }
 
@@ -182,6 +274,7 @@ function removeById(listName, id) {
   const index = list.findIndex((item) => item.id === id);
   if (index < 0) return null;
   const [removed] = list.splice(index, 1);
+  sqlDelete(listName, id).catch(err => console.error('SQL Delete Error', err));
   return removed;
 }
 
@@ -520,6 +613,10 @@ async function copyDir(sourceDir, targetDir) {
 
 app.get('/api/backup/export', async (_req, res, next) => {
   try {
+    // Generate db.json dynamically so backup still works without JSON disk writing
+    const tmpPath = path.join(DATA_DIR, `export_db_${Date.now()}.json`);
+    await fs.writeFile(tmpPath, JSON.stringify(db, null, 2));
+
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${backupFileName()}"`);
 
@@ -527,9 +624,11 @@ app.get('/api/backup/export', async (_req, res, next) => {
     archive.on('error', (err) => {
       next(err);
     });
+    
+    res.on('finish', () => fs.unlink(tmpPath).catch(() => {}));
 
     archive.pipe(res);
-    archive.file(DB_PATH, { name: 'server-data/db.json' });
+    archive.file(tmpPath, { name: 'server-data/db.json' });
     archive.directory(PDF_DIR, 'server-data/pdfs');
     await archive.finalize();
   } catch (err) {
@@ -567,7 +666,7 @@ app.post('/api/backup/import', backupUpload.single('backup'), async (req, res, n
     const tempDbPath = path.join(tempDir, 'db.json');
     const rawDb = await fs.readFile(tempDbPath, 'utf8');
     db = normalizeDb(JSON.parse(rawDb));
-    await saveDb();
+    await resetSqliteFromMemory();
 
     const tempPdfDir = path.join(tempDir, 'pdfs');
     await fs.rm(PDF_DIR, { recursive: true, force: true });
@@ -836,6 +935,10 @@ app.delete('/api/pdfs/:id', async (req, res, next) => {
       return;
     }
 
+    db.highlights.filter(h => h.pdfId === removed.id).forEach(h => sqlDelete('highlights', h.id).catch(err => console.error(err)));
+    db.attachments.filter(a => a.pdfId === removed.id).forEach(a => sqlDelete('attachments', a.id).catch(err => console.error(err)));
+    db.suco_notes.filter(n => n.docId === removed.id).forEach(n => sqlDelete('suco_notes', n.id).catch(err => console.error(err)));
+
     db.highlights = db.highlights.filter((h) => h.pdfId !== removed.id);
     db.attachments = db.attachments.filter((a) => a.pdfId !== removed.id);
     db.suco_notes = db.suco_notes.filter((n) => n.docId !== removed.id);
@@ -878,6 +981,7 @@ app.delete('/api/highlights/:id', async (req, res, next) => {
       return;
     }
 
+    db.attachments.filter(a => a.highlightId === removed.id).forEach(a => sqlDelete('attachments', a.id).catch(err => console.error(err)));
     db.attachments = db.attachments.filter((a) => a.highlightId !== removed.id);
 
     await saveDb();

@@ -212,7 +212,7 @@
           <p class="search-sub">Pesquise o conteúdo do Síntese e organize a estrutura da Biblioteca no mesmo espaço.</p>
         </div>
         <div class="search-block">
-          <input type="text" id="search-input" placeholder="Buscar em highlights, notas, projetos e anexos…" oninput="Search.run(this.value)">
+          <input type="text" id="search-input" placeholder="Buscar em highlights, notas, projetos e anexos…" oninput="Search.onInput(this.value)">
           <div id="search-results"></div>
         </div>
         <div class="search-block">
@@ -319,6 +319,22 @@
     Image,
   };
 </script>
-<script defer src="script.js"></script>
+<script defer src="js/helpers.js"></script>
+<script defer src="js/config.js"></script>
+<script defer src="js/api.js"></script>
+<script defer src="js/store.js"></script>
+<script defer src="js/toast.js"></script>
+<script defer src="js/right_panel.js"></script>
+<script defer src="js/pdf_viewer.js"></script>
+<script defer src="js/image_capture.js"></script>
+<script defer src="js/highlights.js"></script>
+<script defer src="js/context_menu.js"></script>
+<script defer src="js/suco.js"></script>
+<script defer src="js/library.js"></script>
+<script defer src="js/projects.js"></script>
+<script defer src="js/attachments.js"></script>
+<script defer src="js/search.js"></script>
+<script defer src="js/ui.js"></script>
+<script defer src="js/init.js"></script>
 </body>
 </html>

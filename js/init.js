@@ -15,7 +15,7 @@ async function init() {
     if (typeof Tabs?.restoreActiveWorkspace === 'function') {
       await Tabs.restoreActiveWorkspace();
     }
-    toast('Lumen carregado ✓');
+    toast('Síntese carregado ✓');
   } catch(err) {
     console.error(err);
     toast('Erro ao inicializar. Verifique o console.');

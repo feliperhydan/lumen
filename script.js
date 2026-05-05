@@ -2340,22 +2340,13 @@ const Library = {
   },
 
   async _openDocView(doc, options = {}) {
-    if (!options?.skipHistory && (S.view === 'reader' || S.view === 'suco')) {
-      if (S.currentDoc && S.currentDoc.id !== doc.id) {
-        UI._pushHistory(UI._captureNavState());
-      }
-    }
-
     const mode = normalizeWorkspaceMode(options.mode || S.activeTab || 'reader');
     const shouldPreserveView = Boolean(options?.preserveView || options?.viewState);
 
     S.highlights = await DB.highlights.byPDF(doc.id);
     S.currentDoc = doc;
 
-    UI.nav('reader', false, {
-      skipHistory: Boolean(options?.skipHistory),
-      skipTabCapture: true,
-    });
+    UI.nav('reader', false, { skipTabCapture: true });
     document.querySelectorAll('[id^="sdoc-"]').forEach(e => e.classList.remove('active'));
     document.getElementById(`sdoc-${doc.id}`)?.classList.add('active');
     UI.renderCats();
@@ -2363,7 +2354,6 @@ const Library = {
     document.getElementById('doc-title-hdr').textContent = doc.title || doc.name;
 
     const pvOptions = { ...options };
-    delete pvOptions.skipHistory;
     delete pvOptions.skipTabRegister;
     delete pvOptions.skipTabCapture;
     delete pvOptions.mode;
@@ -3665,10 +3655,7 @@ const Proj = {
   },
 
   async _openProjectView(p, options = {}) {
-    UI.nav('proj-editor', true, {
-      skipHistory: Boolean(options?.skipHistory),
-      skipTabCapture: true,
-    });
+    UI.nav('proj-editor', true, { skipTabCapture: true });
     S.openProjId = p.id;
     document.getElementById('proj-edit-title').textContent = p.title;
 
@@ -4625,7 +4612,7 @@ const Tabs = {
       this.save();
       this.render();
       if (S.view === 'reader' || S.view === 'suco' || S.view === 'proj-editor') {
-        UI.nav('library', true, { skipHistory: true, skipTabCapture: true });
+        UI.nav('library', true, { skipTabCapture: true });
       }
       return;
     }
@@ -4639,7 +4626,6 @@ const Tabs = {
       await this.activate(nextTab.id, {
         force: true,
         skipCapture: true,
-        skipHistory: true,
       });
     }
   },
@@ -4682,7 +4668,6 @@ const Tabs = {
     return this.activate(activeTabId, {
       force: true,
       skipCapture: true,
-      skipHistory: true,
     });
   },
 
@@ -4737,38 +4722,11 @@ const VIEWS = [
 
 const UI = {
   _uploadPrompt: null,
-  _history: [],
-  _skipNextHistory: false,
 
-  _stateKey(state) {
-    if (!state) return '';
-    return [state.view, state.activeTab, state.docId, state.projId].filter(Boolean).join('|');
-  },
-
-  _captureNavState() {
-    const state = { view: S.view, activeTab: S.activeTab };
-    if (S.view === 'reader' || S.view === 'suco') {
-      state.docId = S.currentDoc ? S.currentDoc.id : null;
-      state.viewState = S.pdfDoc ? PV._captureViewState() : null;
-    }
-    if (S.view === 'proj-editor') {
-      state.projId = S.openProjId || null;
-    }
-    return state;
-  },
-
-  _pushHistory(state) {
-    if (!state || !state.view) return;
-    const last = this._history[this._history.length - 1];
-    if (last && this._stateKey(last) === this._stateKey(state)) return;
-    this._history.push(state);
-    this._refreshBackButton();
-  },
-
-  _refreshBackButton() {
+  _refreshHomeButton() {
     const btn = document.getElementById('nav-back');
     if (!btn) return;
-    btn.style.display = this._history.length ? 'inline-flex' : 'none';
+    btn.style.display = S.view === 'library' ? 'none' : 'inline-flex';
   },
 
   _setViewClass(view) {
@@ -4779,56 +4737,9 @@ const UI = {
     if (view) body.classList.add(`view-${view}`);
   },
 
-  _maybePushHistory(nextView, options = {}) {
-    if (options.skipHistory || this._skipNextHistory) {
-      this._skipNextHistory = false;
-      return;
-    }
-    if (nextView === S.view) return;
-    this._pushHistory(this._captureNavState());
-  },
-
-  async back() {
-    const prev = this._history.pop();
-    this._refreshBackButton();
-    if (!prev) return;
-    await this._restoreNavState(prev);
-  },
-
-  async _restoreNavState(state) {
-    if (!state?.view) return;
-
-    if (state.view === 'reader' || state.view === 'suco') {
-      const doc = state.docId ? S.docs.find(d => d.id === state.docId) : null;
-      const sameDoc = doc && S.currentDoc && doc.id === S.currentDoc.id && S.pdfDoc;
-
-      if (sameDoc) {
-        this._skipNextHistory = true;
-        this.tab(state.view);
-        if (state.viewState) PV._restoreViewState(state.viewState);
-        return;
-      }
-
-      if (doc) {
-        this._skipNextHistory = true;
-        await Library.open(doc, { preserveView: true, viewState: state.viewState, skipHistory: true });
-        if (state.view === 'suco') {
-          this._skipNextHistory = true;
-          this.tab('suco');
-        }
-        if (state.viewState) PV._restoreViewState(state.viewState);
-        return;
-      }
-    }
-
-    if (state.view === 'proj-editor' && state.projId) {
-      this._skipNextHistory = true;
-      await Proj.open(state.projId, { skipHistory: true });
-      return;
-    }
-
-    this._skipNextHistory = true;
-    this.nav(state.view, true, { skipHistory: true });
+  goHome() {
+    if (S.view === 'library') return;
+    this.nav('library');
   },
 
   nav(view, updateNav = true, options = {}) {
@@ -4836,9 +4747,9 @@ const UI = {
       Tabs.captureCurrentTabState();
     }
 
-    this._maybePushHistory(view, options);
     S.view = view;
     this._setViewClass(view);
+    this._refreshHomeButton();
     if (typeof Tabs?.render === 'function') Tabs.render();
     document.getElementById('pdf-bar').style.display     = (view === 'reader' && S.pdfDoc) ? 'flex' : 'none';
 
@@ -5664,7 +5575,7 @@ async function init() {
     UI.renderCats();
     document.body.classList.add('sidebar-open');
     UI._setViewClass(S.view);
-    UI._refreshBackButton();
+    UI._refreshHomeButton();
     ImgCapture.init();
     await Library.load();
     if (typeof Tabs?.restoreActiveWorkspace === 'function') {

@@ -19,10 +19,10 @@
   </div>
   <div class="sidebar-sect">
     <div class="sidebar-lbl">Navegação</div>
-    <div class="sitem active" id="snav-library"     onclick="UI.nav('library')"><span class="ico">▤</span><span class="lbl">Biblioteca</span></div>
-    <div class="sitem"        id="snav-projects"    onclick="UI.nav('projects')"><span class="ico">✏</span><span class="lbl">Projetos</span></div>
-    <div class="sitem"        id="snav-attachments" onclick="UI.nav('attachments')"><span class="ico">📎</span><span class="lbl">Anexos</span></div>
-    <div class="sitem"        id="snav-search"      onclick="UI.nav('search')"><span class="ico">⌕</span><span class="lbl">Busca Global</span></div>
+    <div class="sitem active" id="snav-library" onclick="UI.nav('library')"><img class="ico nav-icon" src="assets/icons/icone-biblioteca-preto.png" alt=""><span class="lbl">Biblioteca</span></div>
+    <div class="sitem" id="snav-projects" onclick="UI.nav('projects')"><img class="ico nav-icon" src="assets/icons/icone-projetos-preto.png" alt=""><span class="lbl">Projetos</span></div>
+    <div class="sitem" id="snav-attachments" onclick="UI.nav('attachments')"><img class="ico nav-icon" src="assets/icons/icone-anexo-preto.png" alt=""><span class="lbl">Anexos</span></div>
+    <div class="sitem" id="snav-search" onclick="UI.nav('search')"><img class="ico nav-icon" src="assets/icons/icone-busca-preto.png" alt=""><span class="lbl">Busca Global</span></div>
   </div>
   <div class="settings-btn" onclick="UI.showSettings()"><span>⚙</span><span>Configurações</span></div>
 </aside>
@@ -30,7 +30,9 @@
 <!-- Left sidebar toggle -->
 <div id="toggle-left" class="sidebar-toggle" onclick="UI.toggleSidebar()" title="Recolher/expandir painel">‹</div>
 
-<button id="nav-back" class="btn btn-ghost back-btn" onclick="UI.back()" title="Voltar um passo" style="display:none;" aria-label="Voltar">&larr;</button>
+<button id="nav-back" class="btn btn-ghost back-btn" onclick="UI.goHome()" title="Ir para a Biblioteca" style="display:none;" aria-label="Ir para a Biblioteca">
+  <img class="back-btn-icon" src="assets/icons/icone-biblioteca-preto.png" alt="">
+</button>
 
 <!-- ── MAIN ── -->
 <main id="main">

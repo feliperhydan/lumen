@@ -4679,21 +4679,25 @@ const Tabs = {
     const active = this.active;
     const visible = this._isVisible(active);
 
-    if (bar) bar.style.display = (S.workspaceTabs.length || visible) ? 'flex' : 'none';
+    if (bar) bar.style.display = 'flex';
 
     if (tabsHost) {
-      tabsHost.innerHTML = S.workspaceTabs.map(tab => {
-        const isActive = tab.id === S.activeWorkspaceTabId;
-        const kindLabel = this._workspaceKindLabel(tab);
-        const title = this._workspaceLabel(tab);
-        return `
-          <div class="workspace-tab ${isActive ? 'active' : ''}" data-tab-id="${escHtml(tab.id)}" onclick="Tabs.activate('${escHtml(tab.id)}')">
-            <span class="workspace-tab-kind">${escHtml(kindLabel)}</span>
-            <span class="workspace-tab-title">${escHtml(title)}</span>
-            <button class="workspace-tab-close" onclick="event.stopPropagation();Tabs.close('${escHtml(tab.id)}')" title="Fechar aba">×</button>
-          </div>
-        `;
-      }).join('');
+      if (S.workspaceTabs.length) {
+        tabsHost.innerHTML = S.workspaceTabs.map(tab => {
+          const isActive = tab.id === S.activeWorkspaceTabId;
+          const kindLabel = this._workspaceKindLabel(tab);
+          const title = this._workspaceLabel(tab);
+          return `
+            <div class="workspace-tab ${isActive ? 'active' : ''}" data-tab-id="${escHtml(tab.id)}" onclick="Tabs.activate('${escHtml(tab.id)}')">
+              <span class="workspace-tab-kind">${escHtml(kindLabel)}</span>
+              <span class="workspace-tab-title">${escHtml(title)}</span>
+              <button class="workspace-tab-close" onclick="event.stopPropagation();Tabs.close('${escHtml(tab.id)}')" title="Fechar aba">×</button>
+            </div>
+          `;
+        }).join('');
+      } else {
+        tabsHost.innerHTML = '<div class="workspace-empty">Biblioteca pronta para abrir documentos e projetos.</div>';
+      }
     }
 
     if (titleHost) {
@@ -4726,7 +4730,8 @@ const UI = {
   _refreshHomeButton() {
     const btn = document.getElementById('nav-back');
     if (!btn) return;
-    btn.style.display = S.view === 'library' ? 'none' : 'inline-flex';
+    btn.style.display = 'inline-flex';
+    btn.disabled = S.view === 'library';
   },
 
   _setViewClass(view) {

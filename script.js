@@ -1385,6 +1385,24 @@ const PV = {
     return { pages };
   },
 
+  _capturePlaceholderLayout() {
+    if (!S.totalPages) return null;
+
+    const pages = [];
+    for (let pageNum = 1; pageNum <= S.totalPages; pageNum += 1) {
+      const wrap = document.getElementById(`pw-${pageNum}`);
+      if (!wrap) return null;
+
+      const width = wrap.clientWidth || parseFloat(wrap.style.width) || 0;
+      const height = wrap.clientHeight || parseFloat(wrap.style.height) || 0;
+      if (!width || !height) return null;
+
+      pages.push({ pageNum, width, height });
+    }
+
+    return { pages };
+  },
+
   _applyPlaceholders(container, placeholderLayout) {
     if (!container || !placeholderLayout?.pages?.length) return false;
 
@@ -4236,6 +4254,7 @@ const Search = {
 
 const Tabs = {
   storageKey: 'lumen.workspace-tabs.v1',
+  _placeholderCache: new Map(),
 
   load() {
     try {
@@ -4298,6 +4317,20 @@ const Tabs = {
 
   findProjectTab(projId) {
     return this.find(`proj:${projId}`);
+  },
+
+  _getPlaceholderLayout(tabId) {
+    if (!tabId) return null;
+    return this._placeholderCache.get(tabId) || null;
+  },
+
+  _setPlaceholderLayout(tabId, layout) {
+    if (!tabId) return;
+    if (layout?.pages?.length) {
+      this._placeholderCache.set(tabId, layout);
+      return;
+    }
+    this._placeholderCache.delete(tabId);
   },
 
   _normalizeTab(tab) {
@@ -4388,6 +4421,9 @@ const Tabs = {
       const nextViewState = S.pdfDoc && typeof PV._captureViewState === 'function'
         ? this._normalizeViewState(PV._captureViewState())
         : tab.viewState || null;
+      const nextPlaceholderLayout = S.pdfDoc && typeof PV._capturePlaceholderLayout === 'function'
+        ? PV._capturePlaceholderLayout()
+        : null;
 
       if (tab.label !== nextLabel) { tab.label = nextLabel; changed = true; }
       if (tab.docType !== nextType) { tab.docType = nextType; changed = true; }
@@ -4396,6 +4432,7 @@ const Tabs = {
         tab.viewState = nextViewState;
         changed = true;
       }
+      this._setPlaceholderLayout(tab.id, nextPlaceholderLayout);
       tab.updatedAt = now;
       tab.lastUsedAt = now;
     }
@@ -4503,6 +4540,7 @@ const Tabs = {
       skipTabCapture: true,
       mode,
       viewState: tab.viewState,
+      placeholderLayout: options.placeholderLayout || this._getPlaceholderLayout(tab.id),
     });
     this.render();
     return tab;
@@ -4558,6 +4596,7 @@ const Tabs = {
         skipTabCapture: true,
         mode: normalizeWorkspaceMode(tab.subview || 'reader'),
         viewState: tab.viewState,
+        placeholderLayout: options.placeholderLayout || this._getPlaceholderLayout(tab.id),
       });
     }
 
@@ -4579,6 +4618,7 @@ const Tabs = {
     if (closingActive) this.captureCurrentTabState();
 
     S.workspaceTabs.splice(index, 1);
+    this._placeholderCache.delete(tabId);
 
     if (!S.workspaceTabs.length) {
       S.activeWorkspaceTabId = null;
@@ -4878,7 +4918,7 @@ const UI = {
         <h3>Classificar arquivos</h3>
         <p class="modal-subtle">
           Escolha como cada PDF deve entrar na biblioteca. Para arquivos marcados como
-          <strong>artigo / paper científico</strong>, o Síntese tenta localizar o DOI automaticamente.
+          <strong>artigo / paper científico</strong>, o Lumen tenta localizar o DOI automaticamente.
         </p>
         <div class="upload-kind-list">${rows}</div>
         <div class="upload-kind-legend">
@@ -5091,7 +5131,7 @@ const UI = {
             <button class="btn btn-sm" onclick="UI.promptBackupImport()">⬆️ Importar backup</button>
           </div>
           <input type="file" id="backup-file" accept=".zip" style="display:none;" onchange="UI.onBackupImport(event)">
-          <div class="meta-doi-tip" style="margin-top:8px;">Exporta e restaura todos os dados locais do Síntese (PDFs e metadados).</div>
+          <div class="meta-doi-tip" style="margin-top:8px;">Exporta e restaura todos os dados locais do Lumen (PDFs e metadados).</div>
         </div>
       </div>
       <div class="mactions"><button class="btn" onclick="Modal.hide()">Fechar</button></div>
@@ -5630,7 +5670,7 @@ async function init() {
     if (typeof Tabs?.restoreActiveWorkspace === 'function') {
       await Tabs.restoreActiveWorkspace();
     }
-    toast('Síntese carregado ✓');
+    toast('Lumen carregado ✓');
   } catch(err) {
     console.error(err);
     toast('Erro ao inicializar. Verifique o console.');

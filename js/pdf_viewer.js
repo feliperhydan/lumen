@@ -462,7 +462,9 @@ const PV = {
     );
 
     // Clique em highlight: detectado por coordenadas na wrap (hl-layer está abaixo)
-    wrap.addEventListener('click', e => {
+    wrap.addEventListener('click', async e => {
+      if (typeof Links !== 'undefined' && await Links.onClick(e, pageNum, wrap)) return;
+
       const sel = window.getSelection();
       if (sel && !sel.isCollapsed) return;
       const wRect = wrap.getBoundingClientRect();
@@ -479,7 +481,30 @@ const PV = {
     layer.innerHTML = '';
     S.highlights.filter(h => h.page === pageNum).forEach(h => {
       const cat = getCat(h.catId);
-      if (h.type === 'image') {
+      if (h.type === 'origin' || h.type === 'end') {
+        const r = h.rects[0];
+        if (!r) return;
+        const el = document.createElement('div');
+        el.className = 'hl-mark-point';
+        el.style.position = 'absolute';
+        el.style.left = (r.x * cssW) + 'px';
+        el.style.top = (r.y * cssH) + 'px';
+        el.style.width = (r.w * cssW) + 'px';
+        el.style.height = (r.h * cssH) + 'px';
+        el.style.backgroundColor = cat.color;
+        el.style.borderRadius = '50%';
+        el.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
+        el.style.border = '2px solid white';
+        el.style.display = 'flex';
+        el.style.alignItems = 'center';
+        el.style.justifyContent = 'center';
+        el.style.fontSize = '12px';
+        el.style.color = 'white';
+        el.style.zIndex = '50';
+        el.innerHTML = h.type === 'origin' ? '📍' : '🎯';
+        el.title = h.type === 'origin' ? 'Ponto de Origem' : 'Ponto de Fim';
+        layer.appendChild(el);
+      } else if (h.type === 'image') {
         (h.rects || []).forEach(r => {
           const el = document.createElement('div');
           el.className = 'hl-mark-img';

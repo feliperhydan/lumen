@@ -82,10 +82,16 @@
         <button onclick="PV.zoomIn()">+</button>
         <div class="sep"></div>
         <button class="img-mode-btn" id="img-mode-btn" onclick="ImgCapture.toggle()" title="Capturar região como imagem">📷 Capturar Imagem</button>
+        <button class="img-mode-btn" id="origin-mode-btn" onclick="Links.toggleOriginMode()" title="Criar ponto de origem">📍 Ponto de Origem</button>
         <button class="img-mode-btn" id="copy-ref-btn" onclick="PV.copyCitation()" title="Copiar referência do artigo" style="display:none;">📋 Copiar Referência</button>
         <div class="sep"></div>
         <span style="font-size:11px;color:rgba(255,255,255,.5);" id="reader-doc-name"></span>
       </div>
+    </div>
+    
+    <div id="link-mode-banner" style="display:none; position:absolute; top:80px; left:50%; transform:translateX(-50%); background:var(--bg-panel); border:1px solid var(--border-col); padding:10px 20px; border-radius:20px; z-index:100; box-shadow:0 10px 30px rgba(0,0,0,0.5); align-items:center; gap:10px;">
+      <span style="font-size:13px; color:var(--text-main);">Selecione o local para o <b>Ponto de Fim</b> (Pode navegar para outro PDF)</span>
+      <button class="btn" style="padding:4px 8px; font-size:11px;" onclick="Links.cancelEndMode()">Cancelar</button>
     </div>
 
     <!-- SUCO -->
@@ -327,6 +333,7 @@
 <script defer src="js/right_panel.js"></script>
 <script defer src="js/pdf_viewer.js"></script>
 <script defer src="js/image_capture.js"></script>
+<script defer src="js/links.js"></script>
 <script defer src="js/highlights.js"></script>
 <script defer src="js/context_menu.js"></script>
 <script defer src="js/suco.js"></script>

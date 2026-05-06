@@ -247,9 +247,9 @@ const Library = {
   setSort(val) { S.libFilter.sort = val; this.renderGrid(); },
   clearFilters() { S.libFilter = {tags: [], type: '', lang: '', sort: S.libFilter.sort || 'date-desc'}; this.renderFilters(); this.renderGrid(); },
 
-  async openById(id) {
+  async openById(id, options = {}) {
     const doc = S.docs.find(d => d.id === id);
-    if (doc) await this.open(doc);
+    if (doc) await this.open(doc, options);
   },
 
   async open(doc, options = {}) {

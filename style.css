@@ -432,6 +432,10 @@ body{font-family:var(--font-ui);background:var(--bg);color:var(--text);height:10
 #proj-editor-view{overflow:hidden;}
 .editor-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;}
 .editor-bar{background:var(--surface);border-bottom:1px solid var(--border2);padding:8px 20px;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+#export-pdf-btn{display:inline-flex;align-items:center;gap:5px;border-color:rgba(42,92,138,.3);color:var(--accent);}
+#export-pdf-btn:hover{background:rgba(42,92,138,.08);}
+#export-suco-btn{display:inline-flex;align-items:center;gap:5px;border-color:rgba(42,92,138,.3);color:var(--accent);}
+#export-suco-btn:hover{background:rgba(42,92,138,.08);}
 
 .editor-toolbar{
   display:flex;flex-wrap:wrap;gap:8px;

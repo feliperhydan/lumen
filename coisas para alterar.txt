@@ -8,9 +8,9 @@ PARTE 1: Formatação de Layout
 ✓✓✓ Zoom in e Zoom out manter o PDF na mesma página
 ✓✓✓ Sistema de pastas e subpastas
 ✓✓✓ Retirar parte de "Documentos"
-Sistema de abas** | rhydan: como isso aqui funciona?
+✓✓✓ Sistema de abas
 ✓✓✓ Botão de "Voltar" do leitor para página anterior
-Check-Workflow - Limpar excessos e funcionamento workflow | rhydan: como isso aqui funciona?
+✓✓✓ Check-Workflow - Limpar excessos e funcionamento workflow
 ✓✓✓ Colocar indices nos icones de trabalhos academicos e capitulos de livro
 ✓✓✓ Mudanças no editor de arquivo caso mude de TIPO, tese, capitulo de livro, livro ou artigo, mudança de metadados***
 ✓✓✓ Colocar o tipo do arquivo nos icones dos arquivos (ex: artigo, livro, capitlo de livro etc)
@@ -25,18 +25,18 @@ Colocar feature atrelada a traduções (camada de texto por página ou selecion�
 ✓✓✓ Aplicação de Referencias ABNT e Vancouver
 ✓✓✓ ISBN funcionando dos livros
 Marcador tipo post-it para livros e PDFs grandes, com um titulo -> serve como atalho - SUMÁRIO PERSONALIZADO - Ele redireciona tambem no suco. Pode ficar como algo com um Título e como os contéudos são em ordem fica para organizar tambem o proprio SUCO.
-Tags funcionando decentemente
+✓✓✓ Tags funcionando decentemente
 ✓✓✓ Sistema de Busca Global - Etiquetas e filtros
 Criar nova categoria de Anexo? Isto tem que ser explicado a IA, Livro -> Artigo
-Check-Workflow - Limpar excessos e funcionamento workflow
-Ferramenta para Baixar PDFs (artigos, livros etc)
-Ferrramenta para Baixar Suco como PDF 
-Ferramenta para Baixar Projeto como PDF
+✓✓✓ Check-Workflow - Limpar excessos e funcionamento workflow
+✓✓✓ Ferramenta para Baixar PDFs (artigos, livros etc)
+✓✓✓ Ferrramenta para Baixar Suco como PDF 
+✓✓✓ Ferramenta para Baixar Projeto como PDF
 
 PARTE 3: Editor de texto 
 
-Tip tap, ferramentas de texto
-Organização em páginas
-Editor de texto para Relatórios na aba projetos -> Exportação de PDFs da aba de projetos para aba de Bibliotecas 
-Download de projetos e suco como arquivos PDF
-Check-Workflow - Limpar excessos e funcionamento workflow
+✓✓✓ Tip tap, ferramentas de texto
+✓✓✓ Organização em páginas
+✓✓✓ Editor de texto para Relatórios na aba projetos -> Exportação de PDFs da aba de projetos para aba de Bibliotecas 
+✓✓✓ Download de projetos e suco como arquivos PDF
+✓✓✓ Check-Workflow - Limpar excessos e funcionamento workflow

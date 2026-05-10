@@ -313,6 +313,24 @@ async function resolveCurlExecutable() {
   return curlExecutablePromise;
 }
 
+async function resolveCurlExecutable() {
+  if (!curlExecutablePromise) {
+    curlExecutablePromise = (async () => {
+      const candidates = process.platform === 'win32'
+        ? ['curl.exe', 'curl']
+        : ['curl'];
+
+      for (const candidate of candidates) {
+        if (await commandExists(candidate)) return candidate;
+      }
+
+      throw new Error('Curl nao esta disponivel neste sistema. Instale o curl ou adicione-o ao PATH.');
+    })();
+  }
+
+  return curlExecutablePromise;
+}
+
 function normalizeCitationStyle(style, fallback = 'apa') {
   const normalized = normalizeString(style, fallback).trim().toLowerCase();
   return ['abnt', 'vancouver', 'apa'].includes(normalized) ? normalized : fallback;

@@ -98,8 +98,13 @@
     <div class="view" id="suco-view">
       <div id="suco-inner">
         <div class="suco-head">
-          <h1 class="suco-title" id="suco-title">Suco</h1>
-          <p class="suco-sub" id="suco-sub">Abra um documento para ver seus highlights aqui.</p>
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
+            <div>
+              <h1 class="suco-title" id="suco-title">Suco</h1>
+              <p class="suco-sub" id="suco-sub">Abra um documento para ver seus highlights aqui.</p>
+            </div>
+            <button class="btn btn-sm" id="export-suco-btn" onclick="ExportPDF.exportSuco()" title="Exportar Suco como PDF" style="flex-shrink:0;margin-top:4px;">⬇ Exportar PDF</button>
+          </div>
         </div>
         <div id="suco-body"></div>
       </div>
@@ -125,6 +130,7 @@
           <button class="btn btn-ghost" onclick="UI.nav('projects')" style="padding:4px 10px;">← Projetos</button>
           <span id="proj-edit-title" style="font-size:13px;font-weight:500;color:var(--text2);"></span>
           <div style="flex:1;"></div>
+          <button class="btn btn-sm" id="export-pdf-btn" onclick="ExportPDF.exportCurrentProject()" title="Exportar projeto como PDF">⬇ Exportar PDF</button>
           <button class="btn btn-p btn-sm" onclick="Proj.saveContent()">Salvar</button>
         </div>
         <div class="editor-toolbar" id="proj-editor-toolbar" aria-label="Barra de ferramentas do editor">
@@ -341,6 +347,7 @@
 <script defer src="js/projects.js"></script>
 <script defer src="js/attachments.js"></script>
 <script defer src="js/search.js"></script>
+<script defer src="js/export_pdf.js"></script>
 <script defer src="js/ui.js"></script>
 <script defer src="js/init.js"></script>
 </body>

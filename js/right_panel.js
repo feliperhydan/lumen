@@ -85,8 +85,10 @@ const RP = {
     const dateStr = h.createdAt ? new Date(h.createdAt).toLocaleDateString() : '';
 
     let html = `
-      <div class="hl-panel-text" style="font-weight:bold; color:var(--text-main); font-size: 15px;">
-        ${h.type === 'origin' ? '📍 Ponto de Origem' : `🎯 ${escHtml(h.text || 'Ponto de Fim')}`}
+      <div class="hl-panel-text" style="font-weight:bold; color:var(--text-main); font-size: 15px; display:flex; align-items:center; gap:6px;">
+        ${h.type === 'origin' 
+          ? `<img src="assets/icons/icone-ponto-inicial-preto.png" class="ui-icon-theme ui-icon-light"><img src="assets/icons/icone-ponto-inicial-branco.png" class="ui-icon-theme ui-icon-dark"> Ponto de Origem` 
+          : `<img src="assets/icons/icone-ponto-final-preto.png" class="ui-icon-theme ui-icon-light"><img src="assets/icons/icone-ponto-final-branco.png" class="ui-icon-theme ui-icon-dark"> ${escHtml(h.text || 'Ponto de Fim')}`}
       </div>
       <div class="hl-panel-sect">
         <div class="hl-panel-lbl">Categoria</div>
@@ -112,13 +114,21 @@ const RP = {
               const epLabel = ep.text && ep.text !== 'Ponto de Fim' ? ep.text : docTitle;
               return `
                 <div style="display:flex; gap:5px; align-items:center;">
-                  <button class="btn btn-sm" style="flex:1; text-align:left; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" onclick="Links.navigateToEnd('${ep.id}')" title="${escHtml(docTitle)}">🎯 ${escHtml(epLabel)} (Pág. ${ep.page})</button>
+                  <button class="btn btn-sm" style="flex:1; text-align:left; font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:5px;" onclick="Links.navigateToEnd('${ep.id}')" title="${escHtml(docTitle)}">
+                    <img src="assets/icons/icone-ponto-final-preto.png" class="ui-icon-theme ui-icon-light">
+                    <img src="assets/icons/icone-ponto-final-branco.png" class="ui-icon-theme ui-icon-dark">
+                    ${escHtml(epLabel)} (Pág. ${ep.page})
+                  </button>
                   <button class="btn btn-d btn-sm" style="padding:4px 8px;" title="Remover este vínculo" onclick="RP.deleteHL('${ep.id}'); setTimeout(() => RP.showHighlight(S.selectedHL), 200);">✖</button>
                 </div>
               `;
             }).join('')}
           </div>
-          <button class="btn btn-p btn-sm" style="margin-top:10px;width:100%;" onclick="Links.startEndMode('${h.id}')">➕ Adicionar Ponto de Fim</button>
+          <button class="btn btn-p btn-sm" style="margin-top:10px;width:100%; display:flex; align-items:center; justify-content:center; gap:5px;" onclick="Links.startEndMode('${h.id}')">
+            <img src="assets/icons/icone-ponto-final-preto.png" class="ui-icon-theme ui-icon-light" style="margin-right:0;">
+            <img src="assets/icons/icone-ponto-final-branco.png" class="ui-icon-theme ui-icon-dark" style="margin-right:0;">
+            Adicionar Ponto de Fim
+          </button>
         </div>
         
         <div class="hl-actions">

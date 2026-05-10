@@ -46,7 +46,11 @@ const PV = {
     const hasDoi = Boolean(String(doc?.doi || '').trim());
     copyBtn.style.display = isScientificPaper && hasDoi ? 'inline-flex' : 'none';
     copyBtn.disabled = this._citationBusy;
-    copyBtn.textContent = this._citationBusy ? '⏳ Buscando referência...' : '📋 Copiar Referência';
+    copyBtn.innerHTML = this._citationBusy 
+      ? '⏳ Buscando referência...' 
+      : `<img src="assets/icons/icone-doi-preto.png" class="ui-icon-theme ui-icon-light">
+         <img src="assets/icons/icone-doi-branco.png" class="ui-icon-theme ui-icon-dark">
+         Copiar Referência`;
   },
 
   promptCitationStyle() {
@@ -489,8 +493,9 @@ const PV = {
         el.style.position = 'absolute';
         el.style.left = (r.x * cssW) + 'px';
         el.style.top = (r.y * cssH) + 'px';
-        el.style.width = (r.w * cssW) + 'px';
-        el.style.height = (r.h * cssH) + 'px';
+        const diameter = (r.w * cssW);
+        el.style.width = diameter + 'px';
+        el.style.height = diameter + 'px';
         el.style.backgroundColor = cat.color;
         el.style.borderRadius = '50%';
         el.style.boxShadow = '0 0 10px rgba(0,0,0,0.5)';
@@ -501,7 +506,10 @@ const PV = {
         el.style.fontSize = '12px';
         el.style.color = 'white';
         el.style.zIndex = '50';
-        el.innerHTML = h.type === 'origin' ? '📍' : '🎯';
+        const themeSuffix = isDarkTheme() ? 'branco' : 'preto';
+        el.innerHTML = h.type === 'origin' 
+          ? `<img src="assets/icons/icone-ponto-inicial-${themeSuffix}.png" style="width:75%; height:75%; object-fit:contain;">` 
+          : `<img src="assets/icons/icone-ponto-final-${themeSuffix}.png" style="width:75%; height:75%; object-fit:contain;">`;
         el.title = h.type === 'origin' ? 'Ponto de Origem' : 'Ponto de Fim';
         layer.appendChild(el);
       } else if (h.type === 'image') {

@@ -456,6 +456,11 @@ const UI = {
     document.body.classList.toggle('dark-mode', on);
     Library.renderGrid();
     Folders.renderToolbar('library');
+
+    // Atualiza ícones dos marcadores no PDF se o leitor estiver aberto
+    if (S.view === 'reader' && S.pdfDoc) {
+      for (let i = 1; i <= S.totalPages; i++) PV.refreshPage(i);
+    }
     DB.settings.patch({darkMode: on}).catch(err => {
       console.warn('Falha ao salvar tema no servidor.', err);
       toast('Não foi possível salvar o tema no servidor.', 2800);

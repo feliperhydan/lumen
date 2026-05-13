@@ -275,6 +275,11 @@ const UI = {
       <div style="margin-top:7px;padding-top:7px;border-top:1px solid var(--border2);font-size:11px;">
         ${S.highlights.length} highlight(s)
       </div>
+      <div style="margin-top:10px; border-top:1px solid var(--border2); padding-top:10px;">
+        <a href="/api/pdfs/${doc.id}/file?download=1" class="btn btn-sm" style="width:100%; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:5px; height:32px; font-size:12px;" download>
+          ⬇️ Baixar PDF Original
+        </a>
+      </div>
     `;
   },
 

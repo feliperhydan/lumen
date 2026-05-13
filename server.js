@@ -603,7 +603,12 @@ app.get('/api/pdfs/:id/file', async (req, res, next) => {
 
     const fileName = doc.fileName || `${doc.id}.pdf`;
     const fullPath = path.join(PDF_DIR, fileName);
-    res.sendFile(fullPath);
+    
+    if (req.query.download) {
+      res.download(fullPath, `${doc.title || doc.name}.pdf`);
+    } else {
+      res.sendFile(fullPath);
+    }
   } catch (err) {
     next(err);
   }

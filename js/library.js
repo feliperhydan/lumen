@@ -416,6 +416,9 @@ const Library = {
       </div>
       <div class="mactions">
         <button class="btn btn-d" onclick="Library.del('${id}')" style="margin-right:auto;">Remover</button>
+        <a href="/api/pdfs/${id}/file?download=1" class="btn" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center; padding: 0 16px; height: 36px; font-size: 13px;" download>
+          ⬇️ Baixar PDF
+        </a>
         <button class="btn" onclick="Modal.hide()">Cancelar</button>
         <button class="btn btn-p" onclick="Library.saveMeta('${id}')">Salvar</button>
       </div>
